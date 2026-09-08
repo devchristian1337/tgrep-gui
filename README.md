@@ -4,15 +4,14 @@ Windows desktop GUI for [Microsoft tgrep](https://github.com/microsoft/tgrep), w
 
 ## Install
 
-1. Download **tgrep-gui-win-x64.zip** or **tgrep-gui-win-arm64.zip** from [Releases](https://github.com/devchristian1337/tgrep-gui/releases).
-2. Extract the zip.
-3. Double-click `tgrep-gui.exe` inside the `tgrep-gui` folder.
+1. Download **tgrep-gui-win-x64.exe** or **tgrep-gui-win-arm64.exe** from [Releases](https://github.com/devchristian1337/tgrep-gui/releases).
+2. Double-click it.
 
-Keep every extracted file next to the EXE; this is not a single-file build. .NET, Windows App SDK, and Microsoft tgrep 1.0.4 are included. Windows 10 64-bit (build 17763) or later is required. No installer, certificate, or Developer Mode is needed.
+The EXE is self-contained: .NET, Windows App SDK, and Microsoft tgrep 1.0.4 are bundled. The first launch extracts them to a temporary folder. Windows 10 64-bit (build 17763) or later is required. No installer, certificate, or Developer Mode is needed.
 
 ## Prerequisites
 
-These apply when you build from source. The Release zip does not require the .NET SDK.
+These apply when you build from source. The Release EXE does not require the .NET SDK.
 
 - Windows 11 recommended; Windows 10 build 17763 minimum. Mica is enabled where supported.
 - **.NET 10 SDK** x64, or ARM64 to build on ARM. `dotnet --list-sdks` must list a 10.0 SDK, not only the runtime.
@@ -71,7 +70,7 @@ dotnet new winui -n WinUiExample -o "$env:TEMP\WinUiExample"
 .\scripts\Build.ps1 -Task Package
 ```
 
-The script publishes x64 and ARM64, copies the matching `tgrep.exe` next to the app, and writes `artifacts\tgrep-gui-win-x64.zip` and `artifacts\tgrep-gui-win-arm64.zip`. Extract and run `tgrep-gui.exe`. Single-file and trimming are not used, so XAML and bindings stay reliable.
+The script publishes x64 and ARM64 as single-file executables with `tgrep.exe` bundled inside, and writes `artifacts\tgrep-gui-win-x64.exe` and `artifacts\tgrep-gui-win-arm64.exe`. Trimming is not used, so XAML and bindings stay reliable. The first launch extracts dependencies to a temporary folder.
 
 ```powershell
 dotnet publish .\tgrep-gui.csproj -p:PublishProfile=Unpackaged -r win-x64

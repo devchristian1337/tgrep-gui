@@ -21,8 +21,12 @@ public sealed class TgrepClient : IAsyncDisposable
             var configured = Environment.ExpandEnvironmentVariables(configuredPath.Trim().Trim('"'));
             if (File.Exists(configured)) return Path.GetFullPath(configured);
         }
-        var local = Path.Combine(AppContext.BaseDirectory, "tgrep.exe");
-        if (File.Exists(local)) return local;
+        foreach (string? directory in new[] { AppContext.BaseDirectory, Path.GetDirectoryName(Environment.ProcessPath) })
+        {
+            if (string.IsNullOrWhiteSpace(directory)) continue;
+            var local = Path.Combine(directory, "tgrep.exe");
+            if (File.Exists(local)) return Path.GetFullPath(local);
+        }
         foreach (var entry in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
         {
             try

@@ -75,12 +75,23 @@ try
     Check(new TgrepLog(DateTimeOffset.Now, "search", "warning: no index").IsWarning
         && new TgrepLog(DateTimeOffset.Now, "search", "scanning every file").IsWarning, "fallback warnings detected");
     string? originalPath = Environment.GetEnvironmentVariable("PATH");
+    string localTgrep = Path.Combine(AppContext.BaseDirectory, "tgrep.exe");
+    string localBackup = localTgrep + ".bak";
+    bool hadLocalTgrep = File.Exists(localTgrep);
     try
     {
         Environment.SetEnvironmentVariable("PATH", "");
+        if (hadLocalTgrep) File.Move(localTgrep, localBackup, overwrite: true);
         await ThrowsAsync<TgrepMissingException>(() => Task.Run(() => TgrepClient.Discover(Path.Combine(root, "absent.exe"))), "missing tgrep detected");
+        await File.WriteAllBytesAsync(localTgrep, [0x4D, 0x5A]);
+        Check(TgrepClient.Discover("") == Path.GetFullPath(localTgrep), "discover tgrep next to the app");
     }
-    finally { Environment.SetEnvironmentVariable("PATH", originalPath); }
+    finally
+    {
+        Environment.SetEnvironmentVariable("PATH", originalPath);
+        if (File.Exists(localTgrep)) File.Delete(localTgrep);
+        if (hadLocalTgrep && File.Exists(localBackup)) File.Move(localBackup, localTgrep, overwrite: true);
+    }
     var settingsStore = new SettingsStore(Path.Combine(root, "settings.json"));
     await settingsStore.SaveAsync(new() { EditorArguments = "--goto \"$FILE:$LINE\"", RecentFolders = [root] });
     Check((await settingsStore.LoadAsync()).RecentFolders.Single() == root, "settings round trip and atomic replacement");

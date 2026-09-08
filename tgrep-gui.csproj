@@ -28,7 +28,14 @@
     <PackageReference Include="CommunityToolkit.WinUI.Controls.Sizers" Version="8.2.251219" />
     <ProjectReference Include="Core\TgrepGui.Core.csproj" />
     <Manifest Include="$(ApplicationManifest)" />
-    <Content Include="Assets\*.png" />
+    <Content Include="Assets\*.png" Exclude="Assets\icon.png" />
     <Content Include="Assets\AppIcon.ico" />
+    <Content Include="$(BundledTgrepExe)" Condition="'$(BundledTgrepExe)' != '' and Exists('$(BundledTgrepExe)')">
+      <Link>tgrep.exe</Link>
+      <TargetPath>tgrep.exe</TargetPath>
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>false</ExcludeFromSingleFile>
+    </Content>
   </ItemGroup>
 </Project>

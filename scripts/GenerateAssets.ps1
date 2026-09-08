@@ -1,5 +1,5 @@
 param(
-    [string]$Source = (Join-Path (Split-Path $PSScriptRoot) 'Assets\icon.jpg')
+    [string]$Source = ''
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
@@ -7,10 +7,21 @@ Add-Type -AssemblyName System.Drawing
 $projectDirectory = Split-Path $PSScriptRoot
 $assetsDirectory = Join-Path $projectDirectory 'Assets'
 New-Item -ItemType Directory -Force $assetsDirectory | Out-Null
+
+if (-not $Source) {
+    $png = Join-Path $assetsDirectory 'icon.png'
+    $jpg = Join-Path $assetsDirectory 'icon.jpg'
+    if (Test-Path -LiteralPath $png) { $Source = $png }
+    elseif (Test-Path -LiteralPath $jpg) { $Source = $jpg }
+    else { throw 'Icon source not found. Pass -Source <path>.' }
+}
 if (-not (Test-Path -LiteralPath $Source)) { throw "Icon source not found: $Source" }
 
-$projectSource = Join-Path $assetsDirectory 'icon.jpg'
 $sourceFull = (Resolve-Path -LiteralPath $Source).Path
+$extension = [IO.Path]::GetExtension($sourceFull).ToLowerInvariant()
+if ($extension -eq '.jpeg') { $extension = '.jpg' }
+if ($extension -notin @('.png', '.jpg', '.bmp', '.gif')) { $extension = '.png' }
+$projectSource = Join-Path $assetsDirectory ('icon' + $extension)
 if (-not (Test-Path -LiteralPath $projectSource) -or ((Resolve-Path -LiteralPath $projectSource).Path -ne $sourceFull)) {
     Copy-Item -LiteralPath $Source -Destination $projectSource -Force
 }
@@ -147,10 +158,25 @@ function Save-Icon([string]$path, [System.Drawing.Bitmap[]]$images) {
     finally { $stream.Dispose() }
 }
 
-$original = [System.Drawing.Bitmap]::FromFile((Join-Path $assetsDirectory 'icon.jpg'))
+function Test-HasTransparency([System.Drawing.Bitmap]$bitmap) {
+    foreach ($point in @(
+        [System.Drawing.Point]::new(0, 0),
+        [System.Drawing.Point]::new($bitmap.Width - 1, 0),
+        [System.Drawing.Point]::new(0, $bitmap.Height - 1),
+        [System.Drawing.Point]::new($bitmap.Width - 1, $bitmap.Height - 1)
+    )) {
+        if ($bitmap.GetPixel($point.X, $point.Y).A -lt 16) { return $true }
+    }
+    return $false
+}
+
+$sourceBytes = [IO.File]::ReadAllBytes($projectSource)
+$sourceStream = New-Object IO.MemoryStream(,$sourceBytes)
+$original = [System.Drawing.Bitmap]::FromStream($sourceStream)
 $keyed = $original.Clone([System.Drawing.Rectangle]::new(0, 0, $original.Width, $original.Height), [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
 $original.Dispose()
-Remove-Checkerboard $keyed
+$sourceStream.Dispose()
+if (-not (Test-HasTransparency $keyed)) { Remove-Checkerboard $keyed }
 $square = Get-ContentSquare $keyed
 $keyed.Dispose()
 
