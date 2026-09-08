@@ -17,8 +17,8 @@ public sealed partial class MainWindow : Window
 {
     public MainViewModel ViewModel { get; }
     public string DownloadHint => RuntimeInformation.OSArchitecture == Architecture.Arm64
-        ? "Scegli tgrep-v*-aarch64-pc-windows-msvc.zip, estrailo e seleziona tgrep.exe nelle impostazioni."
-        : "Scegli tgrep-v*-x86_64-pc-windows-msvc.zip, estrailo e seleziona tgrep.exe nelle impostazioni.";
+        ? "Choose tgrep-v*-aarch64-pc-windows-msvc.zip, extract it, and select tgrep.exe in Settings."
+        : "Choose tgrep-v*-x86_64-pc-windows-msvc.zip, extract it, and select tgrep.exe in Settings.";
     private bool initialized, shuttingDown, canClose;
     private CancellationTokenSource? copyLogFeedback;
 
@@ -150,12 +150,12 @@ public sealed partial class MainWindow : Window
         // Keep the header inside the popup viewport; only the list owns scrolling.
         LogPanel.Width = Math.Max(1, Math.Min(620, Root.ActualWidth - 64));
         LogPanel.Height = Math.Max(1, Math.Min(360, Root.ActualHeight - 96));
-        CopyLogButton.Content = "Copia log";
+        CopyLogButton.Content = "Copy log";
     }
     private async void CopyLog_Click(object sender, RoutedEventArgs args)
     {
         if (!Copy(string.Join(Environment.NewLine, ViewModel.Logs))) return;
-        await ShowCopyLogFeedbackAsync("Copiato");
+        await ShowCopyLogFeedbackAsync("Copied");
     }
     private async Task ShowCopyLogFeedbackAsync(string text)
     {
@@ -166,7 +166,7 @@ public sealed partial class MainWindow : Window
         try
         {
             await Task.Delay(1600, token);
-            CopyLogButton.Content = "Copia log";
+            CopyLogButton.Content = "Copy log";
         }
         catch (TaskCanceledException) { }
     }

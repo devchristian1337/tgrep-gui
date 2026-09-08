@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.Threading.Channels;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -44,8 +45,8 @@ public sealed class MainViewModel : ObservableObject
         timer.Start();
     }
 
-    private string folder = "", query = "", include = "", exclude = "", message = "Scegli una cartella e cerca nel codice.";
-    private string warning = "", server = "Server non avviato", indexedFiles = "—", elapsed = "0,0 s";
+    private string folder = "", query = "", include = "", exclude = "", message = "Choose a folder and search your code.";
+    private string warning = "", server = "Server not started", indexedFiles = "—", elapsed = "0.0 s";
     private bool ignoreCase = true, literal, wholeWord, useIndex = true, isBusy, isReady, missingTgrep;
     private long matchCount;
     private int warningCount;
@@ -71,7 +72,7 @@ public sealed class MainViewModel : ObservableObject
     public long MatchCount { get => matchCount; private set => SetProperty(ref matchCount, value); }
     public int WarningCount { get => warningCount; private set => SetProperty(ref warningCount, value); }
     public FileResult? SelectedFile { get => selectedFile; set { if (SetProperty(ref selectedFile, value)) OnPropertyChanged(nameof(SelectedPath)); } }
-    public string SelectedPath => SelectedFile?.FullPath ?? "Seleziona un file per leggere le corrispondenze";
+    public string SelectedPath => SelectedFile?.FullPath ?? "Select a file to read the matches";
     public string SettingsPath => store.FilePath;
 
     private void NotifyCommands()
@@ -86,7 +87,7 @@ public sealed class MainViewModel : ObservableObject
             Settings = await store.LoadAsync();
             if (!File.Exists(store.FilePath)) await store.SaveAsync(Settings);
         }
-        catch (Exception ex) { settingsReadable = false; ReportError(new IOException("Impostazioni non caricate: " + ex.Message)); }
+        catch (Exception ex) { settingsReadable = false; ReportError(new IOException("Settings were not loaded: " + ex.Message)); }
         foreach (var recent in Settings.RecentFolders) RecentFolders.Add(recent);
         Folder = RecentFolders.FirstOrDefault() ?? "";
         IgnoreCase = Settings.IgnoreCase; Literal = Settings.Literal;
@@ -113,15 +114,15 @@ public sealed class MainViewModel : ObservableObject
 
     public async Task SaveSettingsAsync(AppSettings value)
     {
-        if (IsBusy) throw new InvalidOperationException("Attendi il termine della ricerca prima di salvare.");
+        if (IsBusy) throw new InvalidOperationException("Wait for the search to finish before saving.");
         if (!string.IsNullOrWhiteSpace(value.TgrepPath) && !File.Exists(Environment.ExpandEnvironmentVariables(value.TgrepPath)))
-            throw new FileNotFoundException("Il percorso tgrep.exe non esiste.");
+            throw new FileNotFoundException("The tgrep.exe path does not exist.");
         if (!string.IsNullOrWhiteSpace(value.IndexPath) && !Path.IsPathFullyQualified(Environment.ExpandEnvironmentVariables(value.IndexPath)))
-            throw new ArgumentException("Usa un percorso assoluto per l’indice.");
+            throw new ArgumentException("Use an absolute path for the index.");
         if (!string.IsNullOrWhiteSpace(value.EditorPath) && !File.Exists(Environment.ExpandEnvironmentVariables(value.EditorPath)))
-            throw new FileNotFoundException("Il percorso dell’editor non esiste. Seleziona il file .exe.");
+            throw new FileNotFoundException("The editor path does not exist. Select the .exe file.");
         if (!string.IsNullOrWhiteSpace(value.EditorPath) && !value.EditorArguments.Contains("$FILE"))
-            throw new ArgumentException("Gli argomenti dell’editor devono contenere $FILE.");
+            throw new ArgumentException("Editor arguments must contain $FILE.");
         value = value with { RecentFolders = Settings.RecentFolders };
         await store.SaveAsync(value);
         Settings = value; settingsReadable = true;
@@ -132,7 +133,7 @@ public sealed class MainViewModel : ObservableObject
 
     private async Task SearchAsync()
     {
-        if (string.IsNullOrEmpty(Query)) { ReportError(new ArgumentException("Inserisci il testo o una espressione regolare.")); return; }
+        if (string.IsNullOrEmpty(Query)) { ReportError(new ArgumentException("Enter text or a regular expression.")); return; }
         BeginOperation();
         Files.Clear(); byPath.Clear(); SelectedFile = null; MatchCount = 0;
         var channel = Channel.CreateBounded<SearchMatch>(new BoundedChannelOptions(1024)
@@ -166,11 +167,11 @@ public sealed class MainViewModel : ObservableObject
             }
             await producer;
             DrainUpdates();
-            Message = MatchCount == 0 ? "Nessuna corrispondenza. Prova a cambiare testo o filtri." : $"Ricerca completata · {Files.Count:N0} file";
+            Message = MatchCount == 0 ? "No matches. Try a different query or filters." : $"Search completed · {Files.Count.ToString("N0", CultureInfo.InvariantCulture)} files";
             try { await RememberFolderAsync(); }
-            catch (Exception ex) { ReportWarning("Risultati disponibili; cronologia non salvata: " + ex.Message); }
+            catch (Exception ex) { ReportWarning("Results are available; recent folders were not saved: " + ex.Message); }
         }
-        catch (OperationCanceledException) { Message = "Ricerca annullata · risultati parziali conservati"; }
+        catch (OperationCanceledException) { Message = "Search cancelled · partial results kept"; }
         catch (Exception ex) { ReportError(ex); }
         finally
         {
@@ -189,9 +190,9 @@ public sealed class MainViewModel : ObservableObject
             var token = operation!.Token;
             string root = Folder; var snapshot = Settings;
             await Task.Run(() => client.RestartAsync(root, snapshot, token));
-            DrainUpdates(); Message = "Server pronto. Avvia una ricerca per aggiornare i risultati.";
+            DrainUpdates(); Message = "Server ready. Run a search to refresh the results.";
         }
-        catch (OperationCanceledException) { Message = "Operazione annullata"; }
+        catch (OperationCanceledException) { Message = "Operation cancelled"; }
         catch (Exception ex) { ReportError(ex); }
         finally { EndOperation(); }
     }
@@ -199,13 +200,13 @@ public sealed class MainViewModel : ObservableObject
     private void BeginOperation()
     {
         DrainUpdates(); Warning = ""; WarningCount = 0;
-        operation = new(); IsBusy = true; clock.Restart(); Message = "Preparazione…";
-        Server = "Controllo server…"; IndexedFiles = "—";
+        operation = new(); IsBusy = true; clock.Restart(); Message = "Preparing…";
+        Server = "Checking server…"; IndexedFiles = "—";
     }
     private void EndOperation()
     {
         Interlocked.Exchange(ref pendingProgress, null);
-        clock.Stop(); Elapsed = $"{clock.Elapsed.TotalSeconds:N1} s";
+        clock.Stop(); Elapsed = $"{clock.Elapsed.TotalSeconds.ToString("N1", CultureInfo.InvariantCulture)} s";
         operation?.Dispose(); operation = null; IsBusy = false;
     }
     private async Task RememberFolderAsync()
@@ -222,9 +223,9 @@ public sealed class MainViewModel : ObservableObject
         if (Interlocked.Exchange(ref pendingProgress, null) is { } progress && IsBusy) Message = progress;
         if (Interlocked.Exchange(ref pendingStatus, null) is { } status)
         {
-            Server = status.Running ? $"PID {status.Pid} · porta {status.Port}"
-                : status.Description == "Scansione senza indice" ? status.Description : "Server non attivo";
-            IndexedFiles = status.Files?.ToString("N0") ?? "—";
+            Server = status.Running ? $"PID {status.Pid} · port {status.Port}"
+                : status.Description == "Scanning without index" ? status.Description : "Server not running";
+            IndexedFiles = status.Files?.ToString("N0", CultureInfo.InvariantCulture) ?? "—";
         }
         int count = 0;
         while (count++ < 200 && pendingLogs.TryDequeue(out var log))
@@ -233,12 +234,12 @@ public sealed class MainViewModel : ObservableObject
             if (Logs.Count > 1000) Logs.RemoveAt(0);
             if (log.IsWarning) ReportWarning(log.Text);
         }
-        if (IsBusy) Elapsed = $"{clock.Elapsed.TotalSeconds:N1} s";
+        if (IsBusy) Elapsed = $"{clock.Elapsed.TotalSeconds.ToString("N1", CultureInfo.InvariantCulture)} s";
     }
     public void ReportError(Exception ex)
     {
         if (ex is TgrepMissingException) MissingTgrep = true;
-        Warning = ex.Message; WarningCount++; Message = "Operazione non completata";
+        Warning = ex.Message; WarningCount++; Message = "Operation did not complete";
         Logs.Add($"{DateTime.Now:HH:mm:ss} [GUI] {ex.Message}");
     }
     private void ReportWarning(string text) { Warning = text; WarningCount++; }

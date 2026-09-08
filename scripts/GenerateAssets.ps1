@@ -1,5 +1,5 @@
 param(
-    [string]$Source = (Join-Path (Split-Path $PSScriptRoot) 'Assets\icona.jpg')
+    [string]$Source = (Join-Path (Split-Path $PSScriptRoot) 'Assets\icon.jpg')
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
@@ -7,9 +7,9 @@ Add-Type -AssemblyName System.Drawing
 $projectDirectory = Split-Path $PSScriptRoot
 $assetsDirectory = Join-Path $projectDirectory 'Assets'
 New-Item -ItemType Directory -Force $assetsDirectory | Out-Null
-if (-not (Test-Path -LiteralPath $Source)) { throw "Sorgente icona non trovata: $Source" }
+if (-not (Test-Path -LiteralPath $Source)) { throw "Icon source not found: $Source" }
 
-$projectSource = Join-Path $assetsDirectory 'icona.jpg'
+$projectSource = Join-Path $assetsDirectory 'icon.jpg'
 $sourceFull = (Resolve-Path -LiteralPath $Source).Path
 if (-not (Test-Path -LiteralPath $projectSource) -or ((Resolve-Path -LiteralPath $projectSource).Path -ne $sourceFull)) {
     Copy-Item -LiteralPath $Source -Destination $projectSource -Force
@@ -147,7 +147,7 @@ function Save-Icon([string]$path, [System.Drawing.Bitmap[]]$images) {
     finally { $stream.Dispose() }
 }
 
-$original = [System.Drawing.Bitmap]::FromFile((Join-Path $assetsDirectory 'icona.jpg'))
+$original = [System.Drawing.Bitmap]::FromFile((Join-Path $assetsDirectory 'icon.jpg'))
 $keyed = $original.Clone([System.Drawing.Rectangle]::new(0, 0, $original.Width, $original.Height), [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
 $original.Dispose()
 Remove-Checkerboard $keyed

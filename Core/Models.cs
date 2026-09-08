@@ -28,4 +28,4 @@ public sealed record TgrepLog(DateTimeOffset Time, string Source, string Text)
 }
 
 public sealed class TgrepMissingException() : Exception(
-    "tgrep.exe non trovato. Scarica la release Windows e seleziona l’eseguibile nelle impostazioni.");
+    "tgrep.exe was not found. Download the Windows release and select the executable in Settings.");

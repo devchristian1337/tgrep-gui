@@ -19,6 +19,6 @@ try {
         'Publish' { & $dotnetExecutable publish .\tgrep-gui.csproj -p:PublishProfile=Unpackaged -r win-x64 }
         'MSIX' { & $dotnetExecutable publish .\tgrep-gui.csproj -p:PublishProfile=MSIX -p:WindowsPackageType=MSIX -p:Platform=x64 -r win-x64 }
     }
-    if ($LASTEXITCODE -ne 0) { throw "dotnet ha restituito il codice $LASTEXITCODE" }
+    if ($LASTEXITCODE -ne 0) { throw "dotnet exited with code $LASTEXITCODE" }
 }
 finally { Pop-Location }

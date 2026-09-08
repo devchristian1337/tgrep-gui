@@ -26,7 +26,7 @@ public sealed class SettingsStore(string? filePath = null)
         if (!File.Exists(FilePath)) return new();
         await using var stream = File.OpenRead(FilePath);
         var value = await JsonSerializer.DeserializeAsync<AppSettings>(stream, JsonOptions)
-            ?? throw new InvalidDataException("settings.json è vuoto.");
+            ?? throw new InvalidDataException("settings.json is empty.");
         return value with
         {
             TgrepPath = value.TgrepPath ?? "", IndexPath = value.IndexPath ?? "",

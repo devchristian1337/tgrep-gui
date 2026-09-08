@@ -29,7 +29,7 @@ public static class Arguments
             }
             else token.Append(ch);
         }
-        if (quote != '\0') throw new ArgumentException("Virgolette non chiuse nei filtri file.");
+        if (quote != '\0') throw new ArgumentException("Unclosed quotes in file filters.");
         if (token.Length > 0) result.Add(token.ToString());
         return result;
     }
@@ -76,11 +76,11 @@ public static class Arguments
             {
                 "--folder" or "-f" => "folder", "--include-files" or "-i" => "include",
                 "--exclude-files" or "-e" => "exclude", "--text" or "-t" => "text",
-                _ => throw new ArgumentException($"Opzione sconosciuta: {pair[0]}")
+                _ => throw new ArgumentException($"Unknown option: {pair[0]}")
             };
             if (pair.Length == 2) result[key] = pair[1];
             else if (++i < args.Length) result[key] = args[i];
-            else throw new ArgumentException($"Manca il valore per {pair[0]}.");
+            else throw new ArgumentException($"Missing value for {pair[0]}.");
         }
         return result;
     }

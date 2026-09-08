@@ -7,7 +7,7 @@ public static class EditorLauncher
 {
     public static void Open(string file, long line, AppSettings settings)
     {
-        if (!File.Exists(file)) throw new FileNotFoundException("Il file non esiste più.", file);
+        if (!File.Exists(file)) throw new FileNotFoundException("The file no longer exists.", file);
         if (string.IsNullOrWhiteSpace(settings.EditorPath))
         {
             Process.Start(new ProcessStartInfo(file) { UseShellExecute = true });

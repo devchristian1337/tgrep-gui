@@ -19,7 +19,7 @@ public static class ProcessRunner
         foreach (var arg in arguments) info.ArgumentList.Add(arg);
         // Do not pass the GUI's private WinAppSDK runtime location to child programs.
         info.Environment.Remove("MICROSOFT_WINDOWSAPPRUNTIME_BASE_DIRECTORY");
-        return Process.Start(info) ?? throw new IOException($"Impossibile avviare {executable}.");
+        return Process.Start(info) ?? throw new IOException($"Unable to start {executable}.");
     }
 
     public static async Task<ProcessResult> RunAsync(string executable, IEnumerable<string> arguments,

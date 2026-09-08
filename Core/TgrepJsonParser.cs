@@ -45,6 +45,6 @@ public static class TgrepJsonParser
             return text.GetString()!;
         if (value.TryGetProperty("bytes", out var bytes))
             return Encoding.UTF8.GetString(Convert.FromBase64String(bytes.GetString()!));
-        throw new JsonException("Il campo JSON non contiene text o bytes.");
+        throw new JsonException("The JSON field contains neither text nor bytes.");
     }
 }

@@ -12,7 +12,7 @@
     </Grid.KeyboardAccelerators>
     <NavigationView x:Name="Navigation" PaneDisplayMode="LeftCompact" IsBackButtonVisible="Collapsed"
       IsPaneToggleButtonVisible="False" IsSettingsVisible="True" SelectionChanged="Navigation_SelectionChanged">
-      <NavigationView.MenuItems><NavigationViewItem x:Name="SearchNav" Content="Ricerca" Icon="Find" Tag="search" /></NavigationView.MenuItems>
+      <NavigationView.MenuItems><NavigationViewItem x:Name="SearchNav" Content="Search" Icon="Find" Tag="search" /></NavigationView.MenuItems>
       <Grid>
         <Grid x:Name="SearchPage" Padding="24,12,24,12" RowSpacing="12">
           <Grid.RowDefinitions>
@@ -23,10 +23,10 @@
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
             <StackPanel Spacing="3">
               <TextBlock Text="tgrep" FontSize="30" FontWeight="SemiBold" />
-              <TextBlock Text="Il tuo codice, a portata di ricerca." Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+              <TextBlock Text="Your code, ready to search." Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             </StackPanel>
             <CommandBar Grid.Column="1" Background="Transparent" DefaultLabelPosition="Right" VerticalAlignment="Center" IsOpen="False">
-              <AppBarButton Icon="Refresh" Label="Riavvia server" Command="{Binding RestartCommand}" ToolTipService.ToolTip="Riavvia solo il server avviato da questa app" />
+              <AppBarButton Icon="Refresh" Label="Restart server" Command="{Binding RestartCommand}" ToolTipService.ToolTip="Restart only the server started by this app" />
               <AppBarButton Icon="List" Label="Log">
                 <AppBarButton.Flyout>
                   <Flyout Placement="BottomEdgeAlignedRight" Opening="LogFlyout_Opening">
@@ -46,8 +46,8 @@
                       <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
                       <Grid ColumnSpacing="12">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                        <Button x:Name="CopyLogButton" Content="Copia log" MinWidth="96" Click="CopyLog_Click" />
-                        <TextBlock Grid.Column="1" Text="LOG TGREP · ultime 1.000 righe" Style="{StaticResource SectionLabel}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        <Button x:Name="CopyLogButton" Content="Copy log" MinWidth="96" Click="CopyLog_Click" />
+                        <TextBlock Grid.Column="1" Text="TGREP LOG · last 1,000 lines" Style="{StaticResource SectionLabel}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                       </Grid>
                       <ListView Grid.Row="1" ItemsSource="{Binding Logs}" SelectionMode="None"
                         ScrollViewer.HorizontalScrollMode="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -64,24 +64,24 @@
             </CommandBar>
           </Grid>
           <StackPanel Grid.Row="1" Spacing="8">
-            <InfoBar IsOpen="{Binding MissingTgrep, Mode=TwoWay}" Severity="Warning" Title="Installa tgrep" Message="{x:Bind DownloadHint}">
-              <InfoBar.ActionButton><HyperlinkButton Content="Scarica tgrep" NavigateUri="https://github.com/microsoft/tgrep/releases" /></InfoBar.ActionButton>
+            <InfoBar IsOpen="{Binding MissingTgrep, Mode=TwoWay}" Severity="Warning" Title="Install tgrep" Message="{x:Bind DownloadHint}">
+              <InfoBar.ActionButton><HyperlinkButton Content="Download tgrep" NavigateUri="https://github.com/microsoft/tgrep/releases" /></InfoBar.ActionButton>
             </InfoBar>
-            <InfoBar IsOpen="{Binding HasWarning}" Severity="Warning" Title="Avviso" Message="{Binding Warning}" IsClosable="True" />
+            <InfoBar IsOpen="{Binding HasWarning}" Severity="Warning" Title="Warning" Message="{Binding Warning}" IsClosable="True" />
           </StackPanel>
           <Border Grid.Row="2" Style="{StaticResource Card}" Padding="16">
             <Grid RowSpacing="12">
               <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
               <Grid ColumnSpacing="8">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                <AutoSuggestBox x:Name="FolderBox" Header="Cartella" PlaceholderText="Scegli una cartella di progetto" IsEnabled="{Binding CanEdit}"
+                <AutoSuggestBox x:Name="FolderBox" Header="Folder" PlaceholderText="Choose a project folder" IsEnabled="{Binding CanEdit}"
                   Text="{Binding Folder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ItemsSource="{Binding RecentFolders}" SuggestionChosen="Folder_SuggestionChosen" QueryIcon="Folder" />
-                <Button Grid.Column="1" Content="Sfoglia…" VerticalAlignment="Bottom" Click="BrowseFolder_Click" IsEnabled="{Binding CanEdit}" />
+                <Button Grid.Column="1" Content="Browse…" VerticalAlignment="Bottom" Click="BrowseFolder_Click" IsEnabled="{Binding CanEdit}" />
               </Grid>
               <Grid Grid.Row="1" ColumnSpacing="12">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                <TextBox Header="Includi file" PlaceholderText="*.cs; *.xaml" IsEnabled="{Binding CanEdit}" Text="{Binding Include, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTipService.ToolTip="Globs separati da spazio, virgola o punto e virgola. Usa virgolette per spazi nel nome." />
-                <TextBox Grid.Column="1" Header="Escludi file o cartelle" IsEnabled="{Binding CanEdit}" PlaceholderText="bin/; obj/; *.min.js" Text="{Binding Exclude, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBox Header="Include files" PlaceholderText="*.cs; *.xaml" IsEnabled="{Binding CanEdit}" Text="{Binding Include, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTipService.ToolTip="Globs separated by space, comma, or semicolon. Quote names that contain spaces." />
+                <TextBox Grid.Column="1" Header="Exclude files or folders" IsEnabled="{Binding CanEdit}" PlaceholderText="bin/; obj/; *.min.js" Text="{Binding Exclude, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
               </Grid>
             </Grid>
           </Border>
@@ -89,16 +89,16 @@
             <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
             <Grid ColumnSpacing="8">
               <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-              <TextBox x:Name="QueryBox" PlaceholderText="Cerca testo o un’espressione regolare…" FontSize="16" MinHeight="42"
-                Text="{Binding Query, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" KeyDown="Query_KeyDown" AutomationProperties.Name="Testo da cercare" />
-              <Button Grid.Column="1" Content="Cerca" Style="{StaticResource AccentButtonStyle}" Command="{Binding SearchCommand}" MinWidth="90" />
-              <Button Grid.Column="2" Content="Annulla" Command="{Binding CancelCommand}" />
+              <TextBox x:Name="QueryBox" PlaceholderText="Search for text or a regular expression…" FontSize="16" MinHeight="42"
+                Text="{Binding Query, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" KeyDown="Query_KeyDown" AutomationProperties.Name="Search text" />
+              <Button Grid.Column="1" Content="Search" Style="{StaticResource AccentButtonStyle}" Command="{Binding SearchCommand}" MinWidth="90" />
+              <Button Grid.Column="2" Content="Cancel" Command="{Binding CancelCommand}" />
             </Grid>
             <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="16">
-              <CheckBox Content="Ignora maiuscole" IsEnabled="{Binding CanEdit}" IsChecked="{Binding IgnoreCase, Mode=TwoWay}" />
-              <CheckBox Content="Testo letterale" IsEnabled="{Binding CanEdit}" IsChecked="{Binding Literal, Mode=TwoWay}" />
-              <CheckBox Content="Parola intera" IsEnabled="{Binding CanEdit}" IsChecked="{Binding WholeWord, Mode=TwoWay}" />
-              <CheckBox Content="Usa indice" IsEnabled="{Binding CanEdit}" IsChecked="{Binding UseIndex, Mode=TwoWay}" />
+              <CheckBox Content="Ignore case" IsEnabled="{Binding CanEdit}" IsChecked="{Binding IgnoreCase, Mode=TwoWay}" />
+              <CheckBox Content="Literal text" IsEnabled="{Binding CanEdit}" IsChecked="{Binding Literal, Mode=TwoWay}" />
+              <CheckBox Content="Whole word" IsEnabled="{Binding CanEdit}" IsChecked="{Binding WholeWord, Mode=TwoWay}" />
+              <CheckBox Content="Use index" IsEnabled="{Binding CanEdit}" IsChecked="{Binding UseIndex, Mode=TwoWay}" />
             </StackPanel>
           </Grid>
           <Grid Grid.Row="4" MinHeight="100">
@@ -106,16 +106,16 @@
             <Border Style="{StaticResource Card}">
               <Grid RowSpacing="4">
                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-                <TextBlock Text="FILE CON CORRISPONDENZE" Margin="16,14,16,10" Style="{StaticResource SectionLabel}" />
+                <TextBlock Text="MATCHING FILES" Margin="16,14,16,10" Style="{StaticResource SectionLabel}" />
                 <ListView x:Name="FileList" Grid.Row="1" ItemsSource="{Binding Files}" SelectedItem="{Binding SelectedFile, Mode=TwoWay}" SelectionMode="Single">
                   <ListView.ItemTemplate>
                     <DataTemplate>
                       <Grid Padding="0,6" ColumnSpacing="8" HorizontalAlignment="Stretch">
                         <Grid.ContextFlyout>
                           <MenuFlyout>
-                            <MenuFlyoutItem Text="Apri" Icon="OpenFile" Click="FileOpen_Click" Tag="{Binding FullPath}" />
-                            <MenuFlyoutItem Text="Apri cartella contenente" Icon="Folder" Click="FileFolder_Click" Tag="{Binding FullPath}" />
-                            <MenuFlyoutItem Text="Copia percorso" Icon="Copy" Click="FileCopy_Click" Tag="{Binding FullPath}" />
+                            <MenuFlyoutItem Text="Open" Icon="OpenFile" Click="FileOpen_Click" Tag="{Binding FullPath}" />
+                            <MenuFlyoutItem Text="Open containing folder" Icon="Folder" Click="FileFolder_Click" Tag="{Binding FullPath}" />
+                            <MenuFlyoutItem Text="Copy path" Icon="Copy" Click="FileCopy_Click" Tag="{Binding FullPath}" />
                           </MenuFlyout>
                         </Grid.ContextFlyout>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
@@ -131,7 +131,7 @@
                 </ListView>
               </Grid>
             </Border>
-            <toolkit:GridSplitter Grid.Column="1" Width="8" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" HorizontalAlignment="Stretch" AutomationProperties.Name="Ridimensiona pannelli risultati" />
+            <toolkit:GridSplitter Grid.Column="1" Width="8" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" HorizontalAlignment="Stretch" AutomationProperties.Name="Resize result panes" />
             <Border Grid.Column="2" Style="{StaticResource Card}">
               <Grid>
                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
@@ -139,7 +139,7 @@
                 <ListView x:Name="MatchList" Grid.Row="1" ItemsSource="{Binding SelectedFile.Lines}" SelectionMode="Extended"
                   DoubleTapped="Match_DoubleTapped" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollMode="Enabled">
                   <ListView.KeyboardAccelerators><KeyboardAccelerator Key="C" Modifiers="Control" Invoked="CopyMatches_Invoked" /></ListView.KeyboardAccelerators>
-                  <ListView.ContextFlyout><MenuFlyout><MenuFlyoutItem Text="Copia righe selezionate" Icon="Copy" Click="CopyMatches_Click" /><MenuFlyoutItem Text="Apri nell’editor · F3" Icon="OpenFile" Click="OpenSelected_Click" /></MenuFlyout></ListView.ContextFlyout>
+                  <ListView.ContextFlyout><MenuFlyout><MenuFlyoutItem Text="Copy selected lines" Icon="Copy" Click="CopyMatches_Click" /><MenuFlyoutItem Text="Open in editor · F3" Icon="OpenFile" Click="OpenSelected_Click" /></MenuFlyout></ListView.ContextFlyout>
                   <ListView.ItemTemplate>
                     <DataTemplate>
                       <Grid ColumnSpacing="16" Padding="0,4">
@@ -150,7 +150,7 @@
                     </DataTemplate>
                   </ListView.ItemTemplate>
                 </ListView>
-                <TextBlock Grid.Row="2" Text="F3 / doppio clic  Apri nell’editor     Ctrl+C  Copia selezione" Margin="16,8" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                <TextBlock Grid.Row="2" Text="F3 / double-click  Open in editor     Ctrl+C  Copy selection" Margin="16,8" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
               </Grid>
             </Border>
           </Grid>
@@ -159,10 +159,10 @@
             <TextBlock Text="{Binding Message}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding Message}" />
             <StackPanel Orientation="Horizontal" Spacing="20">
               <TextBlock Text="{Binding Server}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-              <TextBlock FontSize="12"><Run Text="Indicizzati: " /><Run Text="{Binding IndexedFiles}" /></TextBlock>
-              <TextBlock FontSize="12"><Run Text="Corrispondenze: " /><Run Text="{Binding MatchCount}" /></TextBlock>
+              <TextBlock FontSize="12"><Run Text="Indexed: " /><Run Text="{Binding IndexedFiles}" /></TextBlock>
+              <TextBlock FontSize="12"><Run Text="Matches: " /><Run Text="{Binding MatchCount}" /></TextBlock>
               <TextBlock Text="{Binding Elapsed}" FontSize="12" />
-              <TextBlock FontSize="12"><Run Text="Avvisi: " /><Run Text="{Binding WarningCount}" /></TextBlock>
+              <TextBlock FontSize="12"><Run Text="Warnings: " /><Run Text="{Binding WarningCount}" /></TextBlock>
             </StackPanel>
           </StackPanel>
         </Grid>

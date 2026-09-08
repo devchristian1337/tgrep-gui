@@ -38,7 +38,7 @@ public sealed partial class SettingsPage : Page
                 Theme = ((ComboBoxItem)ThemeBox.SelectedItem).Tag.ToString()!,
                 IgnoreCase = IgnoreCaseBox.IsChecked == true, Literal = LiteralBox.IsChecked == true
             });
-            ShowMessage("Impostazioni salvate. Le modifiche al motore si applicano alla prossima ricerca.", InfoBarSeverity.Success);
+            ShowMessage("Settings saved. Engine changes apply to the next search.", InfoBarSeverity.Success);
         }
         catch (Exception ex) { ShowMessage(ex.Message, InfoBarSeverity.Error); }
         finally { SaveButton.IsEnabled = true; }

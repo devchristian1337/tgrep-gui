@@ -1,21 +1,21 @@
 # tgrep-gui
 
-GUI desktop Windows per [Microsoft tgrep](https://github.com/microsoft/tgrep), scritta in **C# / .NET 10, WinUI 3, Windows App SDK 2.4.0 stabile**. Riprende il flusso cartella → file → righe di [rg-gui](https://github.com/kcowolf/rg-gui), con un’interfaccia Fluent indipendente. Nessuna dipendenza WPF, WinForms, UWP, Electron o webview.
+Windows desktop GUI for [Microsoft tgrep](https://github.com/microsoft/tgrep), written in **C# / .NET 10, WinUI 3, Windows App SDK 2.4.0 stable**. It follows the folder → file → lines flow of [rg-gui](https://github.com/kcowolf/rg-gui), with an independent Fluent interface. No WPF, WinForms, UWP, Electron, or webview dependency.
 
-## Prerequisiti
+## Prerequisites
 
-- Windows 11 consigliato; minimo Windows 10 build 17763. Mica viene attivato dove supportato.
-- **.NET 10 SDK** x64, oppure ARM64 per compilare su ARM. `dotnet --list-sdks` deve elencare un SDK 10.0, non soltanto il runtime.
-- Visual Studio 2026 con sviluppo WinUI/.NET desktop per l’esperienza F5. La compilazione tramite CLI funziona senza Visual Studio: il Windows SDK BuildTools viene ripristinato da NuGet.
-- Windows App SDK **2.4.0 stabile**, CommunityToolkit.Mvvm **8.4.2**, CommunityToolkit.WinUI.Controls.Sizers **8.2.251219**: tutti dichiarati nel progetto e ripristinati automaticamente. Il runtime Windows App SDK è incluso nell’output; non occorre installarlo separatamente.
-- Modalità sviluppatore di Windows per sviluppo/distribuzione MSIX. L’eseguibile **unpackaged** predefinito non richiede identità MSIX, certificati o Modalità sviluppatore.
-- [tgrep per Windows](https://github.com/microsoft/tgrep/releases): scarica `tgrep-v*-x86_64-pc-windows-msvc.zip`, oppure `tgrep-v*-aarch64-pc-windows-msvc.zip` su ARM64. Estrai il pacchetto e seleziona `tgrep.exe` nelle impostazioni. Test d’integrazione eseguiti con **1.0.4**.
+- Windows 11 recommended; Windows 10 build 17763 minimum. Mica is enabled where supported.
+- **.NET 10 SDK** x64, or ARM64 to build on ARM. `dotnet --list-sdks` must list a 10.0 SDK, not only the runtime.
+- Visual Studio 2026 with WinUI/.NET desktop development for the F5 experience. CLI builds work without Visual Studio: Windows SDK BuildTools is restored from NuGet.
+- Windows App SDK **2.4.0 stable**, CommunityToolkit.Mvvm **8.4.2**, CommunityToolkit.WinUI.Controls.Sizers **8.2.251219**: all declared in the project and restored automatically. The Windows App SDK runtime is included in the output; a separate install is not required.
+- Windows Developer Mode for MSIX development/distribution. The default **unpackaged** executable does not require an MSIX identity, certificates, or Developer Mode.
+- [tgrep for Windows](https://github.com/microsoft/tgrep/releases): download `tgrep-v*-x86_64-pc-windows-msvc.zip`, or `tgrep-v*-aarch64-pc-windows-msvc.zip` on ARM64. Extract the package and select `tgrep.exe` in Settings. Integration tests were run against **1.0.4**.
 
-La scelta predefinita del tema è **Sistema**: su Windows scuro l’app parte scura; nelle impostazioni puoi forzare Chiaro o Scuro.
+The default theme is **System**: on dark Windows the app starts dark; Settings can force Light or Dark.
 
-## Compilazione e avvio
+## Build and run
 
-I sorgenti sono già completi: **non eseguire `dotnet new` sopra questa cartella**. Dalla root del repository esegui questi comandi PowerShell, uno alla volta:
+The sources are already complete: **do not run `dotnet new` over this folder**. From the repository root, run these PowerShell commands one at a time:
 
 ```powershell
 dotnet restore .\tgrep-gui.csproj
@@ -29,23 +29,23 @@ dotnet build .\tgrep-gui.csproj -c Debug --no-restore
 dotnet run --project .\tgrep-gui.csproj --no-build
 ```
 
-L’output predefinito è `bin\x64\Debug\net10.0-windows10.0.26100.0\win-x64\tgrep-gui.exe`. Si può avviare direttamente; conserva tutti i file della cartella di output accanto all’EXE. `WindowsPackageType=None` e il primo profilo di avvio `Project` rendono **F5 e dotnet run unpackaged**. Apri `tgrep-gui.csproj` in Visual Studio e scegli x64 / profilo Unpackaged.
+The default output is `bin\x64\Debug\net10.0-windows10.0.26100.0\win-x64\tgrep-gui.exe`. You can launch it directly; keep every file in the output folder next to the EXE. `WindowsPackageType=None` and the first launch profile `Project` make **F5 and dotnet run unpackaged**. Open `tgrep-gui.csproj` in Visual Studio and choose x64 / Unpackaged profile.
 
-Su questo workspace è stata preparata anche una copia locale del .NET SDK in `.tools\dotnet`, esclusa da Git. Per usarla nella sessione PowerShell corrente:
+This workspace may also contain a local .NET SDK under `.tools\dotnet`, which is excluded from Git. To use it in the current PowerShell session:
 
 ```powershell
 $env:PATH = "$PWD\.tools\dotnet;$env:PATH"
 ```
 
-In alternativa lo script seguente sceglie automaticamente l’SDK locale, quando presente:
+Alternatively, the following script picks the local SDK automatically when present:
 
 ```powershell
 .\scripts\Build.ps1 -Task Run
 ```
 
-### Template Microsoft, per creare un progetto separato da zero
+### Microsoft template, to create a separate project from scratch
 
-Il template è documentato qui per riprodurre il punto di partenza, non serve a costruire i sorgenti consegnati. Il pacchetto dei template può avere una versione alpha anche quando il **Windows App SDK dell’app è stabile**.
+The template is documented here to reproduce the starting point; it is not needed to build the delivered sources. The template package may be an alpha version even when the **app Windows App SDK is stable**.
 
 ```powershell
 dotnet new install Microsoft.WindowsAppSDK.WinUI.CSharp.Templates --nuget-source https://api.nuget.org/v3/index.json
@@ -55,63 +55,63 @@ dotnet new install Microsoft.WindowsAppSDK.WinUI.CSharp.Templates --nuget-source
 dotnet new winui -n WinUiExample -o "$env:TEMP\WinUiExample"
 ```
 
-### Distribuzione EXE autonoma
+### Self-contained EXE distribution
 
 ```powershell
 dotnet publish .\tgrep-gui.csproj -p:PublishProfile=Unpackaged -r win-x64
 ```
 
-Distribuisci l’intera cartella `artifacts\publish\win-x64`: include .NET e Windows App SDK. tgrep resta un eseguibile esterno configurabile; puoi copiarlo accanto all’app. Non si usa single-file o trimming, per mantenere affidabili XAML e binding.
+Distribute the entire `artifacts\publish\win-x64` folder: it includes .NET and Windows App SDK. tgrep remains a configurable external executable; you can copy it next to the app. Single-file and trimming are not used, so XAML and bindings stay reliable.
 
-Per ARM64:
+For ARM64:
 
 ```powershell
 dotnet publish .\tgrep-gui.csproj -p:PublishProfile=Unpackaged -p:Platform=ARM64 -r win-arm64
 ```
 
-### MSIX opzionale
+### Optional MSIX
 
-Il manifest, le icone e il profilo MSIX sono inclusi. La distribuzione predefinita resta unpackaged.
+The manifest, icons, and MSIX profile are included. The default distribution remains unpackaged.
 
 ```powershell
 dotnet publish .\tgrep-gui.csproj -p:PublishProfile=MSIX -p:WindowsPackageType=MSIX -p:Platform=x64 -r win-x64
 ```
 
-Il profilo produce un pacchetto **non firmato** in `artifacts\msix`. Per installarlo fuori dallo Store occorre firmarlo con un certificato attendibile il cui soggetto corrisponda al Publisher del manifest (`CN=TgrepGui`), oppure usare il flusso Package and Publish di Visual Studio. Il profilo MSIX di avvio richiede una configurazione compilata con `WindowsPackageType=MSIX`; non è il profilo di F5 predefinito. Non viene creato o installato automaticamente alcun certificato.
+The profile produces an **unsigned** package in `artifacts\msix`. To install it outside the Store you must sign it with a trusted certificate whose subject matches the manifest Publisher (`CN=TgrepGui`), or use Visual Studio Package and Publish. The MSIX launch profile requires a build with `WindowsPackageType=MSIX`; it is not the default F5 profile. No certificate is created or installed automatically.
 
-## Uso
+## Usage
 
-1. Scegli una cartella con **Sfoglia**, incolla un percorso o seleziona una delle ultime 12 cartelle.
-2. Inserisci globs facoltativi: `*.cs; *.xaml`, `*.{js,ts}`, oppure `"my files/**"`. Spazi, virgole e punti e virgola separano i filtri; le virgolette preservano gli spazi. Le virgole all’interno di `{...}` o `[...]` sono preservate.
-3. Per escludere directory usa `bin/; obj/; node_modules/` (anche `**/bin/**`); per file usa `*.min.js`. I filtri vengono applicati alla ricerca, senza restringere permanentemente l’indice.
-4. Inserisci una regex, oppure abilita **Testo letterale**, quindi premi **Cerca** o **Invio** nella casella di ricerca.
-5. Scegli un file a sinistra. A destra trovi righe e corrispondenze evidenziate; puoi selezionare testo o più righe con Ctrl/Shift.
+1. Choose a folder with **Browse**, paste a path, or pick one of the last 12 folders.
+2. Optional globs: `*.cs; *.xaml`, `*.{js,ts}`, or `"my files/**"`. Spaces, commas, and semicolons separate filters; quotes preserve spaces. Commas inside `{...}` or `[...]` are preserved.
+3. To exclude directories use `bin/; obj/; node_modules/` (or `**/bin/**`); for files use `*.min.js`. Filters apply to the search and do not permanently shrink the index.
+4. Enter a regex, or enable **Literal text**, then press **Search** or **Enter** in the search box.
+5. Pick a file on the left. The right pane shows lines with highlighted matches; you can select text or multiple lines with Ctrl/Shift.
 
-| Scorciatoia | Azione |
+| Shortcut | Action |
 |---|---|
-| Invio, nella casella di ricerca | Avvia ricerca |
-| Esc | Annulla ricerca o preparazione indice |
-| Ctrl+L | Mostra ricerca e seleziona il testo della query |
-| F3 oppure doppio clic sulla riga | Apri nell’editor alla riga |
-| Ctrl+C nel pannello righe | Copia le righe selezionate con percorso e numero |
+| Enter, in the search box | Start search |
+| Esc | Cancel search or index preparation |
+| Ctrl+L | Show search and select the query text |
+| F3 or double-click a line | Open in the editor at that line |
+| Ctrl+C in the lines pane | Copy selected lines with path and line number |
 
-Il menu contestuale di un file offre Apri, Apri cartella contenente e Copia percorso. Il pannello **Log** mostra le ultime 1.000 righe di diagnostica; **Copia log** le copia negli appunti. I log non vengono salvati su disco dall’app.
+A file context menu offers Open, Open containing folder, and Copy path. The **Log** pane shows the last 1,000 diagnostic lines; **Copy log** copies them to the clipboard. The app does not write logs to disk.
 
-### Ricerca, indice e cambi di branch
+### Search, index, and branch changes
 
-Con **Usa indice** attivo, l’app esegue `tgrep status`. Se manca l’indice esegue `index`, mostrando i messaggi di avanzamento; quindi avvia `serve` e aspetta che l’indice sia pronto. Un server già attivo viene riutilizzato, compreso un server avviato esternamente. La barra di stato riporta PID, porta, file indicizzati, numero di corrispondenze, tempo totale (inclusa preparazione) e avvisi.
+With **Use index** on, the app runs `tgrep status`. If there is no index it runs `index`, showing progress messages; then it starts `serve` and waits until the index is ready. An already running server is reused, including one started externally. The status bar reports PID, port, indexed files, match count, total time (including preparation), and warnings.
 
-Le ricerche successive riutilizzano il server. Il watcher di tgrep gestisce modifiche e cambi di branch: **la GUI non rilancia `index` al cambio di branch**. Dopo un cambio esteso aspetta il watcher e ripeti la ricerca. Se i risultati sembrano obsoleti, **Riavvia server**, poi Cerca; il riavvio non ricostruisce un indice esistente. L’app rifiuta il riavvio di un server esterno e ne spiega il motivo.
+Later searches reuse the server. The tgrep watcher handles edits and branch changes: **the GUI does not rerun `index` on a branch change**. After a large change, wait for the watcher and search again. If results look stale, **Restart server**, then Search; restart does not rebuild an existing index. The app refuses to restart an external server and explains why.
 
-Disattivando **Usa indice** la ricerca passa `--no-index` e non costruisce né avvia un server. Eventuali server già avviati restano disponibili. La barra di stato mostra che l’operazione non usa il server.
+Turning **Use index** off passes `--no-index` and neither builds an index nor starts a server. Any servers already started remain available. The status bar shows that the operation is not using the server.
 
-**Annulla** termina il processo di ricerca o `index` corrente e conserva i risultati parziali con un messaggio esplicito. Un server già avviato resta attivo e viene riutilizzato. Se è ancora impegnato nell’indicizzazione iniziale, una successiva ricerca ne aspetta la conclusione; Esc interrompe questa attesa. Alla chiusura dell’app vengono attese le operazioni correnti e terminati soltanto i processi figli che l’app stessa ha avviato. Non viene mai effettuato un arresto per nome processo.
+**Cancel** stops the current search or `index` process and keeps partial results with an explicit message. A server already started stays up and is reused. If it is still busy with the initial index, a later search waits for it to finish; Esc cancels that wait. On app close, current operations are awaited and only child processes started by the app itself are terminated. Processes are never killed by name.
 
-`--line-buffered` evita il buffering della pipe CLI. L’app visualizza ciascun record JSON appena arriva; tgrep può comunque calcolare internamente una parte dei risultati prima di emetterli. I risultati sono mantenuti in memoria e i controlli di elenco virtualizzano le righe: query che corrispondono a milioni di righe possono richiedere molta RAM.
+`--line-buffered` avoids CLI pipe buffering. The app displays each JSON record as it arrives; tgrep may still compute some results internally before emitting them. Results are kept in memory and list controls virtualize rows: queries that match millions of lines can use a lot of RAM.
 
-### Impostazioni ed editor
+### Settings and editor
 
-Il file viene creato al primo avvio in `%AppData%\tgrep-gui\settings.json` e scritto atomicamente. Se è illeggibile l’app lo segnala e non lo sovrascrive automaticamente salvando la cronologia; il pulsante Salva impostazioni permette di sostituirlo esplicitamente.
+The file is created on first launch at `%AppData%\tgrep-gui\settings.json` and written atomically. If it is unreadable the app reports that and does not overwrite it automatically when saving recents; Save settings lets you replace it explicitly.
 
 ```json
 {
@@ -126,47 +126,47 @@ Il file viene creato al primo avvio in `%AppData%\tgrep-gui\settings.json` e scr
 }
 ```
 
-Il motore viene cercato nell’ordine: percorso configurato valido, cartella dell’app, PATH. Un percorso personalizzato di indice deve essere **assoluto e dedicato a una sola cartella**. Il campo vuoto lascia che tutti i comandi usino `<folder>\.tgrep`. Le variabili d’ambiente nei percorsi sono supportate. Le modifiche a eseguibile/indice si applicano alla prossima operazione.
+The engine is resolved in this order: a valid configured path, the app folder, then PATH. A custom index path must be **absolute and dedicated to a single folder**. An empty field lets every command use `<folder>\.tgrep`. Environment variables in paths are supported. Executable/index changes apply to the next operation.
 
-Per aprire alla riga esatta imposta il percorso del `.exe` dell’editor:
+To open at the exact line, set the editor `.exe` path:
 
-| Editor | Argomenti |
+| Editor | Arguments |
 |---|---|
-| Visual Studio Code (`Code.exe`, non `code.cmd`) | `--goto "$FILE:$LINE"` |
+| Visual Studio Code (`Code.exe`, not `code.cmd`) | `--goto "$FILE:$LINE"` |
 | Notepad++ | `-n$LINE "$FILE"` |
 | Sublime Text | `"$FILE:$LINE"` |
 
-Senza editor configurato viene aperta l’applicazione Windows associata al file; in questo caso non è possibile imporre il numero di riga. Il template degli argomenti viene suddiviso **prima** di sostituire `$FILE` e `$LINE`, così un nome contenente virgolette o simboli non può introdurre nuovi argomenti.
+With no editor configured, the Windows file association is used; in that case the line number cannot be forced. The argument template is split **before** substituting `$FILE` and `$LINE`, so a name containing quotes or symbols cannot introduce new arguments.
 
-### Prefill da riga di comando
+### Command-line prefill
 
 ```powershell
 dotnet run --project .\tgrep-gui.csproj --no-build -- --folder .\Core --include-files '*.cs' --exclude-files 'bin/;obj/' --text 'SearchAsync'
 ```
 
-Gli alias sono `-f`, `-i`, `-e`, `-t`; è accettata anche la forma `--text=valore`. Il prefill non avvia automaticamente la ricerca. Le opzioni CLI della GUI sono distinte dalle opzioni CLI del motore.
+Aliases are `-f`, `-i`, `-e`, `-t`; `--text=value` is also accepted. Prefill does not start the search automatically. GUI CLI options are distinct from the engine CLI options.
 
-## Verifiche
+## Tests
 
-Suite senza dipendenze test esterne, con un eseguibile di test per pipe, argv e cancellazione:
+A suite with no external test dependencies, plus a helper executable for pipes, argv, and cancellation:
 
 ```powershell
 dotnet run --project .\Tests\Tests.csproj
 ```
 
-Per includere i test reali con la release scaricata in questo workspace:
+To include real tests against a downloaded release in this workspace:
 
 ```powershell
 .\scripts\Build.ps1 -Task Test -TgrepPath '.\.tools\tgrep\tgrep.exe'
 ```
 
-La suite usa cartelle temporanee univoche, non repository dell’utente. Verifica parser Unicode/base64, globs, CLI, impostazioni, escaping Windows, cancellazione, stderr abbondante e failure del parser senza deadlock. Con tgrep verifica anche indice iniziale, filtro directory, ricerca senza indice, watcher, riuso, riavvio e sopravvivenza dei server esterni.
+The suite uses unique temporary folders, never user repositories. It checks Unicode/base64 parsing, globs, CLI, settings, Windows escaping, cancellation, large stderr, and parser failure without deadlock. With tgrep it also checks first index, directory filter, no-index search, watcher, reuse, restart, and external server survival.
 
-Il sorgente del progetto è suddiviso in `Core` (motore indipendente dalla UI), `ViewModels`, `Views`, `Controls`; vedi [ARCHITECTURE.md](ARCHITECTURE.md). Le icone MSIX si rigenerano con `scripts\GenerateAssets.ps1`.
+The project source is split into `Core` (UI-independent engine), `ViewModels`, `Views`, `Controls`; see [ARCHITECTURE.md](ARCHITECTURE.md). MSIX icons can be regenerated with `scripts\GenerateAssets.ps1`.
 
-## Fonti
+## Sources
 
-- [Creare una WinUI app con VS 2026 o dotnet new](https://learn.microsoft.com/en-us/windows/apps/get-started/start-here)
-- [Windows App SDK 2.x, note della versione stabile](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/release-notes/windows-app-sdk-2-0)
-- [Microsoft tgrep: comandi e architettura](https://github.com/microsoft/tgrep)
-- [rg-gui: riferimento del flusso d’uso](https://github.com/kcowolf/rg-gui)
+- [Create a WinUI app with VS 2026 or dotnet new](https://learn.microsoft.com/en-us/windows/apps/get-started/start-here)
+- [Windows App SDK 2.x stable release notes](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/release-notes/windows-app-sdk-2-0)
+- [Microsoft tgrep: commands and architecture](https://github.com/microsoft/tgrep)
+- [rg-gui: usage-flow reference](https://github.com/kcowolf/rg-gui)

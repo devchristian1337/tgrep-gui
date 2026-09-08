@@ -1,90 +1,90 @@
-# Architettura
+# Architecture
 
-## Confini
+## Boundaries
 
-`App.xaml` carica le risorse Fluent; `MainWindow` ospita `NavigationView`, ricerca e `SettingsPage`. `MicaBackdrop` viene attivato solo quando supportato. `GridSplitter` è il controllo CommunityToolkit.WinUI; `ObservableObject`, `RelayCommand` e `AsyncRelayCommand` provengono da CommunityToolkit.Mvvm.
+`App.xaml` loads Fluent resources; `MainWindow` hosts `NavigationView`, search, and `SettingsPage`. `MicaBackdrop` is enabled only when supported. `GridSplitter` is the CommunityToolkit.WinUI control; `ObservableObject`, `RelayCommand`, and `AsyncRelayCommand` come from CommunityToolkit.Mvvm.
 
-`MainViewModel` gestisce stato UI, comandi, raggruppamento per file, conteggi e impostazioni. Il core `TgrepGui.Core` è una libreria .NET 10 senza riferimenti WinUI e viene testato separatamente. `TgrepClient` coordina il ciclo di vita; `ProcessRunner` possiede i processi transitori; `TgrepJsonParser` converte il protocollo; `Arguments` genera argv; `EditorLauncher` apre il risultato.
+`MainViewModel` owns UI state, commands, per-file grouping, counts, and settings. Core `TgrepGui.Core` is a .NET 10 library with no WinUI references and is tested separately. `TgrepClient` coordinates lifecycle; `ProcessRunner` owns transient processes; `TgrepJsonParser` converts the protocol; `Arguments` builds argv; `EditorLauncher` opens the result.
 
 ## Argv
 
-Ogni argomento passa attraverso `ProcessStartInfo.ArgumentList`: il runtime esegue il quoting Windows. Non viene concatenata una stringa di comando, non viene usata una shell e non vengono interpolati percorsi in PowerShell/cmd.
+Every argument goes through `ProcessStartInfo.ArgumentList`: the runtime performs Windows quoting. No command string is concatenated, no shell is used, and paths are not interpolated in PowerShell/cmd.
 
-| UI | Argomento tgrep |
+| UI | tgrep argument |
 |---|---|
-| Query | `-- <pattern> <root>` dopo tutte le opzioni |
-| Includi | Un `-g <glob>` per filtro |
-| Escludi | Un `-g !<glob>` per filtro |
+| Query | `-- <pattern> <root>` after all options |
+| Include | One `-g <glob>` per filter |
+| Exclude | One `-g !<glob>` per filter |
 | Directory `bin/` | `-g !bin/**` |
-| Ignora maiuscole | `-i` |
-| Testo letterale | `-F` |
-| Parola intera | `-w` |
-| Usa indice disabilitato | `--no-index` |
-| IndexPath non vuoto | `--index-path <absolute-directory>` su **tutti** i comandi |
-| Sempre sulla ricerca | `--json --line-buffered --color never -n` |
+| Ignore case | `-i` |
+| Literal text | `-F` |
+| Whole word | `-w` |
+| Use index off | `--no-index` |
+| Non-empty IndexPath | `--index-path <absolute-directory>` on **every** command |
+| Always on search | `--json --line-buffered --color never -n` |
 
-Si usano globs negativi per le directory escluse anziché alterare `index`/`serve` con `--exclude`. In questo modo modificare un filtro UI non lascia un indice permanentemente incompleto per la ricerca successiva. I filtri di inclusione precedono le esclusioni; queste ultime hanno precedenza secondo la semantica tgrep/ripgrep. Gli ignora-file standard di tgrep restano attivi.
+Negative globs are used for excluded directories instead of changing `index`/`serve` with `--exclude`. Changing a UI filter therefore does not leave a permanently incomplete index for the next search. Include filters come first; exclusions take precedence per tgrep/ripgrep semantics. Standard tgrep ignore files remain active.
 
-Le opzioni CLI della GUI (`--folder/-f`, `--include-files/-i`, `--exclude-files/-e`, `--text/-t`) precompilano il form, senza essere inoltrate direttamente a tgrep.
+GUI CLI options (`--folder/-f`, `--include-files/-i`, `--exclude-files/-e`, `--text/-t`) prefill the form and are not forwarded directly to tgrep.
 
 ## Serve lifecycle
 
 ```mermaid
 flowchart TD
-    A[Cerca] --> B{Usa indice?}
+    A[Search] --> B{Use index?}
     B -- no --> S[search --no-index --json]
-    B -- sì --> C[Normalizza root e valida IndexPath]
+    B -- yes --> C[Normalize root and validate IndexPath]
     C --> D[tgrep status root]
-    D --> E{Server raggiungibile?}
-    E -- sì --> H[Attendi Indexing complete]
-    E -- no --> F{Indice presente?}
+    D --> E{Server reachable?}
+    E -- yes --> H[Wait for Indexing complete]
+    E -- no --> F{Index present?}
     F -- no --> G[tgrep index root]
-    G --> I[Avvia processo figlio serve]
-    F -- sì --> I
+    G --> I[Start owned serve child]
+    F -- yes --> I
     I --> H
     H --> J[search --json]
-    J --> K[Conserva serve per ricerche successive]
+    J --> K[Keep serve for later searches]
 ```
 
-- Root normalizzate con `Path.GetFullPath` e, su Windows, `GetFinalPathNameByHandleW`: junction, symlink, prefissi device, slash finali e maiuscole non moltiplicano i server della stessa cartella.
-- Dizionario dei server **di proprietà dell’app** per root, protetto da un semaforo. Ogni voce conserva l’oggetto `Process`, l’eseguibile, il percorso indice e i task che drenano stdout/stderr.
-- La presenza di una directory `.tgrep` da sola non indica che esista un indice: si interpreta `status`. Questo comando può restituire exit 0 con “No index found”. La risposta distingue indice su disco, server e indicizzazione in corso. Formati sconosciuti o timeout diventano errori visibili, non un invito a sovrascrivere l’indice.
-- Le query `status` hanno timeout 5 secondi. L’avvio senza risposta ha timeout 30 secondi; l’attesa di una indicizzazione effettivamente in corso è cancellabile e non impone un limite arbitrario per repository grandi.
-- Se esiste `meta.json`, `root_path` deve corrispondere alla root. Un indice personalizzato non può essere condiviso tra progetti. La directory indice non può coincidere con la root stessa.
-- Un server esterno viene utilizzato ma non inserito nel dizionario dei processi posseduti. Il PID riportato da `status` è diagnostico: **non viene mai usato per decidere quale processo terminare**.
-- `RestartAsync` ferma soltanto il `Process` posseduto per la root corrente, poi avvia/attende il server. Se trova un server esterno segnala che deve essere arrestato dal suo proprietario. Non rigenera un indice esistente.
-- Se due istanze della GUI tentano l’avvio insieme, `serve.lock` di tgrep arbitra l’esclusività. Se il processo appena avviato termina ma `status` trova un altro server pronto, l’app riutilizza quest’ultimo.
-- Cambiare percorso indice o eseguibile ritira il vecchio server posseduto della stessa root prima del nuovo avvio. I server di altre root vengono mantenuti fino a Esci per il riuso.
-- Il watcher appartiene a tgrep. Nessun watcher Git o comando `index` viene associato al cambio di branch nella GUI.
+- Roots are normalized with `Path.GetFullPath` and, on Windows, `GetFinalPathNameByHandleW`: junctions, symlinks, device prefixes, trailing slashes, and case do not multiply servers for the same folder.
+- A dictionary of **app-owned** servers per root is protected by a semaphore. Each entry keeps the `Process` object, executable, index path, and stdout/stderr drain tasks.
+- A `.tgrep` directory alone does not mean an index exists: `status` is parsed. That command can exit 0 with “No index found”. The response distinguishes on-disk index, server, and in-progress indexing. Unknown formats or timeouts become visible errors, not an invitation to overwrite the index.
+- `status` queries time out after 5 seconds. Startup with no response times out after 30 seconds; waiting for indexing that is actually in progress is cancellable and does not impose an arbitrary limit for large repositories.
+- If `meta.json` exists, `root_path` must match the root. A custom index cannot be shared across projects. The index directory cannot be the root itself.
+- An external server is used but not added to the owned-process dictionary. The PID reported by `status` is diagnostic: **it is never used to decide which process to terminate**.
+- `RestartAsync` stops only the owned `Process` for the current root, then starts/waits for the server. If it finds an external server it reports that the owner must stop it. It does not rebuild an existing index.
+- If two GUI instances try to start together, tgrep’s `serve.lock` arbitrates exclusivity. If the process just started exits but `status` finds another ready server, the app reuses the latter.
+- Changing index path or executable retires the old owned server for the same root before the new start. Servers for other roots are kept until Exit for reuse.
+- The watcher belongs to tgrep. No Git watcher or `index` command is tied to a branch change in the GUI.
 
-## Processi, cancellazione e chiusura
+## Processes, cancellation, and shutdown
 
-I processi tgrep usano `UseShellExecute=false`, `CreateNoWindow=true`, stdout/stderr rediretti e UTF-8. I due stream vengono letti contemporaneamente. La cattura diagnostica per processo è limitata a 32 KiB. Una failure del parser interrompe subito il producer: si attende il primo task completato/fallito fra stdout, stderr ed exit, evitando deadlock quando il processo continua a scrivere.
+tgrep processes use `UseShellExecute=false`, `CreateNoWindow=true`, redirected stdout/stderr, and UTF-8. Both streams are read concurrently. Per-process diagnostic capture is capped at 32 KiB. A parser failure stops the producer immediately: the first completed/failed task among stdout, stderr, and exit is awaited, avoiding deadlock when the process keeps writing.
 
-La cancellazione termina il solo processo transitorio posseduto (`search`, `status`, `index`) e ne attende l’uscita. Non arresta server esterni né un server posseduto riutilizzabile. I risultati già visualizzati restano, accompagnati da “risultati parziali”. Il server in indicizzazione può completare in background.
+Cancellation stops only the owned transient process (`search`, `status`, `index`) and waits for it to exit. It does not stop external servers or a reusable owned server. Results already shown remain, with a “partial results” message. A server still indexing may finish in the background.
 
-`AppWindow.Closing` rinvia la chiusura, annulla e attende l’operazione UI, poi esegue `DisposeAsync` sui server posseduti. Solo al termine chiude la finestra. Vengono usati handle `Process`, mai `Stop-Process -Name tgrep`, enumerazioni globali o PID ricostruiti da file.
+`AppWindow.Closing` defers close, cancels and awaits the UI operation, then runs `DisposeAsync` on owned servers. Only then does it close the window. `Process` handles are used; never `Stop-Process -Name tgrep`, global enumerations, or PIDs reconstructed from files.
 
-L’uscita forzata del processo GUI da Task Manager o un crash del sistema non esegue il flusso asincrono di chiusura: un server figlio può restare attivo e sarà riutilizzato come esterno al successivo avvio. Non viene installato un servizio Windows.
+A forced GUI process exit from Task Manager or a system crash does not run the async shutdown path: a child server may stay alive and will be reused as external on the next launch. No Windows service is installed.
 
-## Streaming e thread UI
+## Streaming and UI thread
 
-`SearchAsync` gira in un worker .NET. Il parser legge un oggetto JSON per riga; gli eventi `begin`/`end` sono riconosciuti, mentre solo `match` crea risultati. `summary` e `context` non producono righe di match. I campi `text` e `bytes` base64 sono supportati. I percorsi relativi vengono risolti rispetto alla root usata dal processo.
+`SearchAsync` runs on a .NET worker. The parser reads one JSON object per line; `begin`/`end` events are recognized, while only `match` creates results. `summary` and `context` do not produce match rows. `text` and base64 `bytes` fields are supported. Relative paths are resolved against the root used by the process.
 
-Gli offset `submatches.start/end` sono byte UTF-8; il parser li converte in indici UTF-16 per `TextHighlighter`. Vengono rimossi soltanto i terminatori di riga finali; spazi iniziali e indentazione sono conservati. Il contatore somma le occorrenze, non soltanto le righe.
+`submatches.start/end` offsets are UTF-8 bytes; the parser converts them to UTF-16 indexes for `TextHighlighter`. Only trailing line terminators are stripped; leading spaces and indentation are kept. The counter sums occurrences, not just lines.
 
-Un `Channel<SearchMatch>` limitato a 1.024 elementi applica backpressure. Il consumer aggiunge fino a 128 risultati per batch, poi cede il thread per input/render. Le collezioni osservabili vengono modificate solo sul thread UI. I ListView virtualizzano gli elementi; i risultati raccolti sono conservati in memoria senza troncamento silenzioso.
+A `Channel<SearchMatch>` bounded to 1,024 items applies backpressure. The consumer adds up to 128 results per batch, then yields the thread for input/render. Observable collections are mutated only on the UI thread. ListViews virtualize items; collected results are kept in memory with no silent truncation.
 
-Un timer UI a 100 ms legge progresso, ultimo stato server e coda di log. Sono conservate le ultime 1.000 righe nel flyout e al massimo 2.000 righe in attesa. Le stringhe contenenti `warning`, compreso `warning: no index`, o `scanning every file` alimentano l’InfoBar e il conteggio avvisi. Errori JSON e codici diversi da 0/1 sono visibili; exit 1 è “nessuna corrispondenza”. I conteggi indicizzati vengono aggiornati durante la preparazione e al termine della ricerca, non sono un monitor continuo a riposo.
+A 100 ms UI timer reads progress, last server status, and the log queue. The last 1,000 lines are kept in the flyout and at most 2,000 lines are queued. Strings containing `warning`, including `warning: no index`, or `scanning every file` feed the InfoBar and warning count. JSON errors and exit codes other than 0/1 are visible; exit 1 is “no matches”. Indexed counts are updated during preparation and at the end of a search; they are not a continuous idle monitor.
 
-## Persistenza e apertura file
+## Persistence and file opening
 
-`SettingsStore` usa `%AppData%\tgrep-gui\settings.json`, con semaforo e sostituzione atomica tramite file temporaneo. Si ricordano al massimo 12 root, senza salvare query, contenuti o log. Le impostazioni vengono fotografate all’avvio della ricerca, quindi modifiche al form non alterano argv già in esecuzione.
+`SettingsStore` uses `%AppData%\tgrep-gui\settings.json`, with a semaphore and atomic replacement via a temporary file. At most 12 roots are remembered; queries, contents, and logs are not saved. Settings are snapshotted when a search starts, so form changes do not alter argv already running.
 
-`EditorLauncher` suddivide il template con `CommandLineToArgvW`, poi sostituisce i token e usa `ArgumentList`. L’editor è un processo interattivo, senza cattura stdout/stderr; se non configurato viene usata l’associazione file Windows. Explorer viene avviato esplicitamente per la selezione del file. Gli appunti usano `DataPackage`.
+`EditorLauncher` splits the template with `CommandLineToArgvW`, then substitutes tokens and uses `ArgumentList`. The editor is an interactive process, with no stdout/stderr capture; if none is configured the Windows file association is used. Explorer is started explicitly to select the file. The clipboard uses `DataPackage`.
 
-## Build e verifiche
+## Build and tests
 
-Il progetto applicazione esclude esplicitamente `Core`, `Tests`, `.tools` e `artifacts` dall’inclusione automatica dei sorgenti. La libreria core è referenziata come progetto. Il default è .NET framework-dependent con runtime Windows App SDK incluso; Publish Unpackaged include anche .NET. Il profilo MSIX è facoltativo e non firma/installa certificati.
+The application project explicitly excludes `Core`, `Tests`, `.tools`, and `artifacts` from automatic source inclusion. The core library is referenced as a project. The default is .NET framework-dependent with the Windows App SDK runtime included; Unpackaged publish also includes .NET. The MSIX profile is optional and does not sign or install certificates.
 
-`Tests/Program.cs` esegue controlli su argv, Unicode, base64, status, impostazioni, pipe e cancellazione. Il programma `FakeTgrep` riproduce stderr abbondante, attese e output JSON malformato. Passando un percorso tgrep reale, la suite crea repository temporanei e prova il ciclo completo, compresa la sopravvivenza di un server esterno. Nessuna prova usa dati o indici di progetto esistenti.
+`Tests/Program.cs` checks argv, Unicode, base64, status, settings, pipes, and cancellation. `FakeTgrep` reproduces large stderr, waits, and malformed JSON. When a real tgrep path is passed, the suite creates temporary repositories and exercises the full cycle, including external server survival. No test uses existing project data or indexes.

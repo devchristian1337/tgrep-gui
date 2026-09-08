@@ -3,23 +3,23 @@
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <ScrollViewer HorizontalContentAlignment="Stretch" HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled">
     <StackPanel Margin="24,24" Spacing="20">
-      <TextBlock Text="Impostazioni" FontSize="28" FontWeight="SemiBold" />
-      <TextBlock Text="Configura il motore di ricerca e il tuo editor." Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+      <TextBlock Text="Settings" FontSize="28" FontWeight="SemiBold" />
+      <TextBlock Text="Configure the search engine and your editor." Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
       <InfoBar x:Name="SaveInfo" IsOpen="False" />
       <Border Style="{StaticResource Card}" Padding="20">
         <StackPanel Spacing="16">
-          <TextBlock Text="MOTORE DI RICERCA" Style="{StaticResource SectionLabel}" />
+          <TextBlock Text="SEARCH ENGINE" Style="{StaticResource SectionLabel}" />
           <Grid ColumnSpacing="8">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-            <TextBox x:Name="TgrepPathBox" Header="Percorso tgrep.exe" PlaceholderText="Automatico: cartella dell’app, poi PATH" />
-            <Button Grid.Column="1" Content="Sfoglia…" VerticalAlignment="Bottom" Click="BrowseTgrep_Click" />
+            <TextBox x:Name="TgrepPathBox" Header="tgrep.exe path" PlaceholderText="Automatic: app folder, then PATH" />
+            <Button Grid.Column="1" Content="Browse…" VerticalAlignment="Bottom" Click="BrowseTgrep_Click" />
           </Grid>
           <Grid ColumnSpacing="8">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-            <TextBox x:Name="IndexPathBox" Header="Percorso indice personalizzato" PlaceholderText="Vuoto = .tgrep nella cartella cercata" />
-            <Button Grid.Column="1" Content="Sfoglia…" VerticalAlignment="Bottom" Click="BrowseIndex_Click" />
+            <TextBox x:Name="IndexPathBox" Header="Custom index path" PlaceholderText="Empty = .tgrep in the searched folder" />
+            <Button Grid.Column="1" Content="Browse…" VerticalAlignment="Bottom" Click="BrowseIndex_Click" />
           </Grid>
-          <TextBlock Text="Usa una directory indice dedicata per ogni progetto. Un percorso personalizzato si applica a tutti i comandi tgrep." TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          <TextBlock Text="Use a dedicated index directory for each project. A custom path is applied to every tgrep command." TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
         </StackPanel>
       </Border>
       <Border Style="{StaticResource Card}" Padding="20">
@@ -27,25 +27,25 @@
           <TextBlock Text="EDITOR" Style="{StaticResource SectionLabel}" />
           <Grid ColumnSpacing="8">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-            <TextBox x:Name="EditorPathBox" Header="Eseguibile dell’editor" PlaceholderText="Vuoto = applicazione predefinita di Windows" />
-            <Button Grid.Column="1" Content="Sfoglia…" VerticalAlignment="Bottom" Click="BrowseEditor_Click" />
+            <TextBox x:Name="EditorPathBox" Header="Editor executable" PlaceholderText="Empty = Windows default application" />
+            <Button Grid.Column="1" Content="Browse…" VerticalAlignment="Bottom" Click="BrowseEditor_Click" />
           </Grid>
-          <TextBox x:Name="EditorArgsBox" Header="Argomenti · $FILE e $LINE" FontFamily="Consolas" />
+          <TextBox x:Name="EditorArgsBox" Header="Arguments · $FILE and $LINE" FontFamily="Consolas" />
           <TextBlock Text="Visual Studio Code: --goto &quot;$FILE:$LINE&quot;   ·   Notepad++: -n$LINE &quot;$FILE&quot;" FontSize="12" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
-          <TextBlock Text="Per aprire alla riga esatta, configura un editor che supporti $LINE. L’applicazione predefinita apre soltanto il file." FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          <TextBlock Text="To open at the exact line, configure an editor that supports $LINE. The default application opens the file only." FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
         </StackPanel>
       </Border>
       <Border Style="{StaticResource Card}" Padding="20">
         <StackPanel Spacing="12">
-          <TextBlock Text="PREFERENZE" Style="{StaticResource SectionLabel}" />
-          <ComboBox x:Name="ThemeBox" Header="Tema" HorizontalAlignment="Stretch">
-            <ComboBoxItem Content="Sistema" Tag="System" /><ComboBoxItem Content="Chiaro" Tag="Light" /><ComboBoxItem Content="Scuro" Tag="Dark" />
+          <TextBlock Text="PREFERENCES" Style="{StaticResource SectionLabel}" />
+          <ComboBox x:Name="ThemeBox" Header="Theme" HorizontalAlignment="Stretch">
+            <ComboBoxItem Content="System" Tag="System" /><ComboBoxItem Content="Light" Tag="Light" /><ComboBoxItem Content="Dark" Tag="Dark" />
           </ComboBox>
-          <CheckBox x:Name="IgnoreCaseBox" Content="Ignora maiuscole per impostazione predefinita" />
-          <CheckBox x:Name="LiteralBox" Content="Testo letterale per impostazione predefinita" />
+          <CheckBox x:Name="IgnoreCaseBox" Content="Ignore case by default" />
+          <CheckBox x:Name="LiteralBox" Content="Literal text by default" />
         </StackPanel>
       </Border>
-      <Button x:Name="SaveButton" Content="Salva impostazioni" Style="{StaticResource AccentButtonStyle}" Click="Save_Click" />
+      <Button x:Name="SaveButton" Content="Save settings" Style="{StaticResource AccentButtonStyle}" Click="Save_Click" />
       <TextBlock x:Name="SettingsLocation" FontSize="12" TextWrapping="Wrap" IsTextSelectionEnabled="True" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
     </StackPanel>
   </ScrollViewer>
