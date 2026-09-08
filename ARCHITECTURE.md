@@ -87,6 +87,6 @@ A 100 ms UI timer reads progress, last server status, and the log queue. The las
 
 ## Build and tests
 
-The application project explicitly excludes `Core`, `Tests`, `.tools`, and `artifacts` from automatic source inclusion. The core library is referenced as a project. Unpackaged publish is self-contained and single-file (`PublishSingleFile`, with Windows App SDK and `tgrep.exe` bundled); the first launch extracts to a temporary folder. The MSIX profile is optional and does not sign or install certificates.
+The application project explicitly excludes `Core`, `Tests`, `.tools`, and `artifacts` from automatic source inclusion. The core library is referenced as a project. Unpackaged publish is self-contained and single-file (`PublishSingleFile`, with Windows App SDK and `tgrep.exe` bundled); the first launch extracts to a temporary folder. The published host must stay named `tgrep-gui.exe` so WinUI can load `tgrep-gui.pri`. Release zips therefore contain that one file rather than a renamed EXE. The MSIX profile is optional and does not sign or install certificates.
 
 `Tests/Program.cs` checks argv, Unicode, base64, status, settings, pipes, and cancellation. `FakeTgrep` reproduces large stderr, waits, and malformed JSON. When a real tgrep path is passed, the suite creates temporary repositories and exercises the full cycle, including external server survival. No test uses existing project data or indexes.

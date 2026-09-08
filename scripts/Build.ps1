@@ -47,14 +47,20 @@ function New-RidRelease([string]$Rid, [string]$Platform) {
     if (-not (Test-Path -LiteralPath $exe)) { throw "Published EXE not found: $exe" }
     $artifactsDirectory = Join-Path $projectDirectory 'artifacts'
     New-Item -ItemType Directory -Force $artifactsDirectory | Out-Null
-    $dest = Join-Path $artifactsDirectory "tgrep-gui-$Rid.exe"
-    Copy-Item -LiteralPath $exe -Destination $dest -Force
-    Write-Host "Created $dest"
+    $stageDirectory = Join-Path $projectDirectory "artifacts\stage-$Rid"
+    if (Test-Path -LiteralPath $stageDirectory) { Remove-Item -LiteralPath $stageDirectory -Recurse -Force }
+    New-Item -ItemType Directory -Force $stageDirectory | Out-Null
+    Copy-Item -LiteralPath $exe -Destination (Join-Path $stageDirectory 'tgrep-gui.exe') -Force
+    $zipPath = Join-Path $artifactsDirectory "tgrep-gui-$Rid.zip"
+    if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
+    tar -a -cf $zipPath -C $stageDirectory tgrep-gui.exe
+    if ($LASTEXITCODE -ne 0) { throw "tar exited with code $LASTEXITCODE" }
+    Write-Host "Created $zipPath"
 }
 
 function Publish-WinX64 { Publish-Rid 'win-x64' 'x64' }
 
-function New-ReleaseExe {
+function New-ReleaseZip {
     New-RidRelease 'win-x64' 'x64'
     New-RidRelease 'win-arm64' 'ARM64'
 }
@@ -70,7 +76,7 @@ try {
             else { & $dotnetExecutable run --project .\Tests\Tests.csproj }
         }
         'Publish' { Publish-WinX64; return }
-        'Package' { New-ReleaseExe; return }
+        'Package' { New-ReleaseZip; return }
         'MSIX' { & $dotnetExecutable publish .\tgrep-gui.csproj -p:PublishProfile=MSIX -p:WindowsPackageType=MSIX -p:Platform=x64 -r win-x64 }
     }
     if ($LASTEXITCODE -ne 0) { throw "dotnet exited with code $LASTEXITCODE" }
