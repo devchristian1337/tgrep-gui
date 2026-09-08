@@ -23,23 +23,24 @@ public static class ProcessRunner
     }
 
     public static async Task<ProcessResult> RunAsync(string executable, IEnumerable<string> arguments,
-        string folder, Func<string, Task>? stdout, Action<string>? stderr, CancellationToken token)
+        string folder, Func<string, ValueTask>? stdout, Action<string>? stderr, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         using var process = Start(executable, arguments, folder);
         using var registration = token.Register(() => Kill(process));
         var output = new StringBuilder();
         var error = new StringBuilder();
-        var outTask = PumpAsync(process.StandardOutput, async line =>
+        var outTask = PumpAsync(process.StandardOutput, line =>
         {
-            if (stdout != null) await stdout(line).ConfigureAwait(false);
-            else AppendBounded(output, line);
+            if (stdout != null) return stdout(line);
+            AppendBounded(output, line);
+            return ValueTask.CompletedTask;
         });
         var errTask = PumpAsync(process.StandardError, line =>
         {
             AppendBounded(error, line);
             stderr?.Invoke(line);
-            return Task.CompletedTask;
+            return ValueTask.CompletedTask;
         });
         try
         {
@@ -66,7 +67,7 @@ public static class ProcessRunner
         }
     }
 
-    internal static async Task PumpAsync(StreamReader reader, Func<string, Task> receive)
+    internal static async Task PumpAsync(StreamReader reader, Func<string, ValueTask> receive)
     {
         while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
             await receive(line).ConfigureAwait(false);

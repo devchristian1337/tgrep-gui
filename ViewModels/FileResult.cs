@@ -13,6 +13,7 @@ public sealed class FileResult(string fullPath, string relativePath) : Observabl
     public string Name => Path.GetFileName(FullPath);
     public ObservableCollection<SearchMatch> Lines { get; } = [];
     private int count;
-    public int Count { get => count; private set => SetProperty(ref count, value); }
-    public void Add(SearchMatch match) { Lines.Add(match); Count += match.MatchCount; }
+    public int Count => count;
+    public void Add(SearchMatch match) { Lines.Add(match); count += match.MatchCount; }
+    public void NotifyCount() => OnPropertyChanged(nameof(Count));
 }

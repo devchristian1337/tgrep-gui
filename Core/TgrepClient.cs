@@ -36,7 +36,7 @@ public sealed class TgrepClient : IAsyncDisposable
     }
 
     public async Task SearchAsync(SearchOptions options, AppSettings settings,
-        Func<SearchMatch, Task> onMatch, CancellationToken cancellationToken)
+        Func<SearchMatch, ValueTask> onMatch, CancellationToken cancellationToken)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
         var token = linked.Token;
@@ -49,12 +49,8 @@ public sealed class TgrepClient : IAsyncDisposable
         if (options.UseIndex) await EnsureServerAsync(folder, exe, index, token).ConfigureAwait(false);
         else StatusChanged?.Invoke(new(false, null, null, null, false, false, "Scanning without index"));
         Progress?.Invoke("Searching…");
-        var result = await ProcessRunner.RunAsync(exe, args, folder, async json =>
-        {
-            if (string.IsNullOrWhiteSpace(json)) return;
-            var item = TgrepJsonParser.Parse(json, folder);
-            if (item.Match != null) await onMatch(item.Match).ConfigureAwait(false);
-        }, line => WriteLog("search", line), token).ConfigureAwait(false);
+        var result = await ProcessRunner.RunAsync(exe, args, folder, json => ReceiveMatch(json, folder, onMatch),
+            line => WriteLog("search", line), token).ConfigureAwait(false);
         if (result.ExitCode is not (0 or 1))
             throw new IOException($"tgrep search: exit {result.ExitCode}. {result.Error.Trim()}");
         if (options.UseIndex)
@@ -109,7 +105,7 @@ public sealed class TgrepClient : IAsyncDisposable
                 {
                     Progress?.Invoke("Creating the first index…");
                     var result = await ProcessRunner.RunAsync(exe, Arguments.Command("index", folder, index), folder,
-                        line => { WriteLog("index", line); Progress?.Invoke(line); return Task.CompletedTask; },
+                        line => { WriteLog("index", line); Progress?.Invoke(line); return ValueTask.CompletedTask; },
                         line => { WriteLog("index", line); Progress?.Invoke(line); }, token).ConfigureAwait(false);
                     if (result.ExitCode != 0) throw new IOException($"Indexing failed ({result.ExitCode}). {result.Error.Trim()}");
                 }
@@ -208,9 +204,15 @@ public sealed class TgrepClient : IAsyncDisposable
 
     private async Task PumpServerAsync(StreamReader reader, string source)
     {
-        try { await ProcessRunner.PumpAsync(reader, line => { WriteLog(source, line); return Task.CompletedTask; }).ConfigureAwait(false); }
+        try { await ProcessRunner.PumpAsync(reader, line => { WriteLog(source, line); return ValueTask.CompletedTask; }).ConfigureAwait(false); }
         catch (IOException ex) { WriteLog(source, ex.Message); }
         catch (ObjectDisposedException) { }
+    }
+    private static ValueTask ReceiveMatch(string json, string folder, Func<SearchMatch, ValueTask> onMatch)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return ValueTask.CompletedTask;
+        var item = TgrepJsonParser.Parse(json, folder);
+        return item.Match != null ? onMatch(item.Match) : ValueTask.CompletedTask;
     }
     private void WriteLog(string source, string text) => Log?.Invoke(new(DateTimeOffset.Now, source, text));
     private static async Task StopAsync(ServerChild child)

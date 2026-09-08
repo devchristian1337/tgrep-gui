@@ -143,15 +143,19 @@ public sealed class MainViewModel : ObservableObject
         var snapshot = Settings;
         Task producer = Task.Run(async () =>
         {
-            try { await client.SearchAsync(options, snapshot, match => channel.Writer.WriteAsync(match, token).AsTask(), token); }
+            try { await client.SearchAsync(options, snapshot, match => channel.Writer.WriteAsync(match, token), token); }
             finally { channel.Writer.TryComplete(); }
         });
         try
         {
-            await foreach (var first in channel.Reader.ReadAllAsync())
+            var touched = new HashSet<FileResult>();
+            var yieldClock = Stopwatch.StartNew();
+            await foreach (var first in channel.Reader.ReadAllAsync(token))
             {
                 var batch = new List<SearchMatch>(128) { first };
                 while (batch.Count < 128 && channel.Reader.TryRead(out var next)) batch.Add(next);
+                touched.Clear();
+                long added = 0;
                 foreach (var match in batch)
                 {
                     if (!byPath.TryGetValue(match.FullPath, out var file))
@@ -159,11 +163,17 @@ public sealed class MainViewModel : ObservableObject
                         file = new(match.FullPath, match.RelativePath);
                         byPath.Add(match.FullPath, file); Files.Add(file);
                     }
-                    file.Add(match); MatchCount += match.MatchCount;
+                    file.Add(match); added += match.MatchCount; touched.Add(file);
                     SelectedFile ??= file;
                 }
-                // Yield between bounded batches so input and paint keep running.
-                await Task.Delay(1);
+                foreach (var file in touched) file.NotifyCount();
+                MatchCount += added;
+                // Yield about every frame so input and paint keep running, without a fixed delay per batch.
+                if (yieldClock.ElapsedMilliseconds >= 16)
+                {
+                    await Task.Delay(1, token);
+                    yieldClock.Restart();
+                }
             }
             await producer;
             DrainUpdates();
@@ -231,7 +241,10 @@ public sealed class MainViewModel : ObservableObject
         while (count++ < 200 && pendingLogs.TryDequeue(out var log))
         {
             Logs.Add(log.ToString());
-            if (Logs.Count > 1000) Logs.RemoveAt(0);
+            if (Logs.Count > 1000)
+            {
+                for (int i = 0; i < 100; i++) Logs.RemoveAt(0);
+            }
             if (log.IsWarning) ReportWarning(log.Text);
         }
         if (IsBusy) Elapsed = $"{clock.Elapsed.TotalSeconds.ToString("N1", CultureInfo.InvariantCulture)} s";

@@ -44,6 +44,17 @@ try
     var match = TgrepJsonParser.Parse(json, root).Match!;
     Check(match.Text == "è😀 needle" && match.Highlights[0] == new TextSpan(4, 6) && match.LineNumber == 7,
         "UTF-8 byte offsets to UTF-16 highlights and CRLF");
+    string two = JsonSerializer.Serialize(new { type = "match", data = new
+    {
+        path = new { text = "caffè file.cs" }, lines = new { text = "è😀 needle needle" }, line_number = 8,
+        submatches = new[] { new { start = 7, end = 13 }, new { start = 14, end = 20 } }
+    }});
+    var twice = TgrepJsonParser.Parse(two, root).Match!;
+    Check(twice.Highlights.Count == 2 && twice.Highlights[0] == new TextSpan(4, 6) && twice.Highlights[1] == new TextSpan(11, 6),
+        "ordered UTF-8 submatches mapped in one pass");
+    var again = TgrepJsonParser.Parse(json, root).Match!;
+    Check(ReferenceEquals(match.FullPath, again.FullPath) && ReferenceEquals(match.RelativePath, again.RelativePath),
+        "reuse path strings for consecutive rows of the same file");
     Check(TgrepJsonParser.Parse("{\"type\":\"begin\",\"data\":{\"path\":{\"text\":\"x.cs\"}}}", root).Match == null
         && TgrepJsonParser.Parse("{\"type\":\"end\",\"data\":{\"path\":{\"text\":\"x.cs\"}}}", root).Type == "end", "begin and end events");
     string bytesJson = JsonSerializer.Serialize(new { type = "match", data = new
@@ -76,13 +87,13 @@ try
     using (var cancellation = new CancellationTokenSource())
     {
         await ThrowsAsync<OperationCanceledException>(() => ProcessRunner.RunAsync(fake, ["sleep"], root,
-            line => { sleepPid = int.Parse(line); cancellation.Cancel(); return Task.CompletedTask; }, null, cancellation.Token), "cancel running child");
+            line => { sleepPid = int.Parse(line); cancellation.Cancel(); return ValueTask.CompletedTask; }, null, cancellation.Token), "cancel running child");
     }
     Check(!Alive(sleepPid), "cancelled child exited");
     var watchdog = Stopwatch.StartNew();
     using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
         await ThrowsAsync<JsonException>(() => ProcessRunner.RunAsync(fake, ["malformed"], root,
-            line => { JsonDocument.Parse(line).Dispose(); return Task.CompletedTask; }, null, timeout.Token), "parser failure kills producer without pipe deadlock");
+            line => { JsonDocument.Parse(line).Dispose(); return ValueTask.CompletedTask; }, null, timeout.Token), "parser failure kills producer without pipe deadlock");
     Check(watchdog.Elapsed < TimeSpan.FromSeconds(8), "parser failure terminates promptly");
     var flooded = await ProcessRunner.RunAsync(fake, ["stderr"], root, null, null, default);
     Check(flooded.Output.Trim() == "done" && flooded.Error.Length <= 32768, "concurrent stderr drainage and bounded capture");
@@ -104,7 +115,7 @@ try
             client.Log += line => Console.WriteLine("  " + line);
             client.StatusChanged += status => { if (status.Running) pid = status.Pid; };
             async Task Search(SearchOptions options)
-            { results.Clear(); await client.SearchAsync(options, settings, m => { results.Add(m); return Task.CompletedTask; }, testTimeout.Token); }
+            { results.Clear(); await client.SearchAsync(options, settings, m => { results.Add(m); return ValueTask.CompletedTask; }, testTimeout.Token); }
             await Search(new(repo, "needle", "*.cs", "skip/"));
             Check(results.Count == 2 && results.All(m => m.RelativePath == "one file.cs"), "real tgrep: first index, serve, JSON, include/exclude, ignore case");
             Check(pid.HasValue && Alive(pid.Value), "real owned server alive");
@@ -130,11 +141,11 @@ try
             Check(results.Count == 4, "real no-index scanning");
             string another = Path.Combine(root, "other repo"); Directory.CreateDirectory(another);
             await ThrowsAsync<InvalidOperationException>(() => client.SearchAsync(new(another, "needle"), settings,
-                _ => Task.CompletedTask, testTimeout.Token), "custom index cannot be reused for another root");
+                _ => ValueTask.CompletedTask, testTimeout.Token), "custom index cannot be reused for another root");
             await File.WriteAllTextAsync(Path.Combine(another, "new.txt"), "needle\n");
             results.Clear();
             await client.SearchAsync(new(another, "needle", UseIndex: false), settings with { IndexPath = "" },
-                m => { results.Add(m); return Task.CompletedTask; }, testTimeout.Token);
+                m => { results.Add(m); return ValueTask.CompletedTask; }, testTimeout.Token);
             Check(results.Count == 1 && !Directory.Exists(Path.Combine(another, ".tgrep")), "no-index on fresh folder never creates index or server");
         }
         Check(!Alive(restartedPid!.Value), "app disposal terminates owned server");
@@ -150,7 +161,7 @@ try
             }
             await using (var otherClient = new TgrepClient())
             {
-                await otherClient.SearchAsync(new(repo, "needle"), settings, _ => Task.CompletedTask, testTimeout.Token);
+                await otherClient.SearchAsync(new(repo, "needle"), settings, _ => ValueTask.CompletedTask, testTimeout.Token);
                 await ThrowsAsync<InvalidOperationException>(() => otherClient.RestartAsync(repo, settings, testTimeout.Token), "external server restart refused");
             }
             Check(!external.HasExited, "external server survives GUI disposal");
