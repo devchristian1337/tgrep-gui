@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Microsoft.UI;
 using Microsoft.UI.Composition.SystemBackdrops;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -29,6 +31,10 @@ public sealed partial class MainWindow : Window
         Root.DataContext = ViewModel;
         ViewModel.ThemeChanged += ApplyTheme;
         if (MicaController.IsSupported()) SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
+        ExtendsContentIntoTitleBar = true;
+        SetTitleBar(AppTitleBar);
+        ApplyTitleBarTheme();
+        Root.ActualThemeChanged += (_, _) => ApplyTitleBarTheme();
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1220, 850));
         string icon = Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico");
         if (File.Exists(icon)) AppWindow.SetIcon(icon);
@@ -51,8 +57,30 @@ public sealed partial class MainWindow : Window
         };
     }
 
-    public void ApplyTheme(string theme) => Root.RequestedTheme = theme switch
-    { "Light" => ElementTheme.Light, "Dark" => ElementTheme.Dark, _ => ElementTheme.Default };
+    public void ApplyTheme(string theme)
+    {
+        Root.RequestedTheme = theme switch
+        {
+            "Light" => ElementTheme.Light,
+            "Dark" => ElementTheme.Dark,
+            _ => ElementTheme.Default
+        };
+        ApplyTitleBarTheme();
+    }
+
+    private void ApplyTitleBarTheme()
+    {
+        if (!AppWindowTitleBar.IsCustomizationSupported()) return;
+        var titleBar = AppWindow.TitleBar;
+        titleBar.PreferredTheme = Root.RequestedTheme switch
+        {
+            ElementTheme.Light => TitleBarTheme.Light,
+            ElementTheme.Dark => TitleBarTheme.Dark,
+            _ => TitleBarTheme.UseDefaultAppMode
+        };
+        titleBar.ButtonBackgroundColor = Colors.Transparent;
+        titleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
+    }
 
     private void Navigation_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {

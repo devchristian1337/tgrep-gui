@@ -10,7 +10,16 @@
       <KeyboardAccelerator Key="Escape" Invoked="Cancel_Invoked" />
       <KeyboardAccelerator Key="F3" Invoked="OpenLine_Invoked" />
     </Grid.KeyboardAccelerators>
-    <NavigationView x:Name="Navigation" PaneDisplayMode="LeftCompact" IsBackButtonVisible="Collapsed"
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <TitleBar x:Name="AppTitleBar" Title="tgrep-gui">
+      <TitleBar.IconSource>
+        <ImageIconSource ImageSource="ms-appx:///Assets/StoreLogo.png" />
+      </TitleBar.IconSource>
+    </TitleBar>
+    <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="LeftCompact" IsBackButtonVisible="Collapsed"
       IsPaneToggleButtonVisible="False" IsSettingsVisible="True" SelectionChanged="Navigation_SelectionChanged">
       <NavigationView.MenuItems><NavigationViewItem x:Name="SearchNav" Content="Search" Icon="Find" Tag="search" /></NavigationView.MenuItems>
       <Grid>
