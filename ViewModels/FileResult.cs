@@ -14,6 +14,14 @@ public sealed class FileResult(string fullPath, string relativePath) : Observabl
     public ObservableCollection<SearchMatch> Lines { get; } = [];
     private int count;
     public int Count => count;
-    public void Add(SearchMatch match) { Lines.Add(match); count += match.MatchCount; }
+    public bool HasLines { get; private set; }
+    public void AddCount(int matchCount) { count += matchCount; }
     public void NotifyCount() => OnPropertyChanged(nameof(Count));
+    public void AddLine(SearchMatch match) => Lines.Add(match);
+    public void MarkLoaded() => HasLines = true;
+    public void ResetLines()
+    {
+        Lines.Clear();
+        HasLines = false;
+    }
 }

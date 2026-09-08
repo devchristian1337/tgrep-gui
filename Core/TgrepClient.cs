@@ -35,8 +35,16 @@ public sealed class TgrepClient : IAsyncDisposable
         throw new TgrepMissingException();
     }
 
-    public async Task SearchAsync(SearchOptions options, AppSettings settings,
+    public Task SearchAsync(SearchOptions options, AppSettings settings,
         Func<SearchMatch, ValueTask> onMatch, CancellationToken cancellationToken)
+        => SearchCoreAsync(options, settings, onMatch, null, cancellationToken);
+
+    public Task SearchHitsAsync(SearchOptions options, AppSettings settings,
+        Func<FileHit, ValueTask> onHit, CancellationToken cancellationToken)
+        => SearchCoreAsync(options, settings, null, onHit, cancellationToken);
+
+    private async Task SearchCoreAsync(SearchOptions options, AppSettings settings,
+        Func<SearchMatch, ValueTask>? onMatch, Func<FileHit, ValueTask>? onHit, CancellationToken cancellationToken)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
         var token = linked.Token;
@@ -44,13 +52,23 @@ public sealed class TgrepClient : IAsyncDisposable
         string exe = Discover(settings.TgrepPath);
         string? index = GetIndex(settings, folder);
         options = options with { Folder = folder };
+        if (options.File is { } file)
+        {
+            file = Path.GetFullPath(file);
+            if (!File.Exists(file)) throw new FileNotFoundException("The file no longer exists.", file);
+            options = options with { File = file };
+        }
         // Validate filters before starting any indexing work.
         var args = Arguments.Search(options, index);
         if (options.UseIndex) await EnsureServerAsync(folder, exe, index, token).ConfigureAwait(false);
         else StatusChanged?.Invoke(new(false, null, null, null, false, false, "Scanning without index"));
         Progress?.Invoke("Searching…");
-        var result = await ProcessRunner.RunAsync(exe, args, folder, json => ReceiveMatch(json, folder, onMatch),
-            line => WriteLog("search", line), token).ConfigureAwait(false);
+        var result = await ProcessRunner.RunJsonAsync(exe, args, folder, json =>
+        {
+            if (onHit != null)
+                return TgrepJsonParser.TryReadHit(json.Span, folder, out var hit) ? onHit(hit) : ValueTask.CompletedTask;
+            return ReceiveMatch(json, folder, onMatch!);
+        }, line => WriteLog("search", line), token).ConfigureAwait(false);
         if (result.ExitCode is not (0 or 1))
             throw new IOException($"tgrep search: exit {result.ExitCode}. {result.Error.Trim()}");
         if (options.UseIndex)
@@ -120,6 +138,7 @@ public sealed class TgrepClient : IAsyncDisposable
             }
             // Wait for a ready index; never show partial results as a completed search.
             var startup = Stopwatch.StartNew();
+            int delayMs = 300;
             while (!status.Running || status.Indexing)
             {
                 token.ThrowIfCancellationRequested();
@@ -133,7 +152,8 @@ public sealed class TgrepClient : IAsyncDisposable
                     throw new TimeoutException("The server did not respond within 30 seconds. Check the log or try Restart server.");
                 StatusChanged?.Invoke(status);
                 Progress?.Invoke(status.Indexing ? "The server is finishing the index…" : "Waiting for server…");
-                await Task.Delay(300, token).ConfigureAwait(false);
+                await Task.Delay(delayMs, token).ConfigureAwait(false);
+                delayMs = Math.Min(1000, delayMs * 2);
                 status = await GetStatusAsync(folder, exe, index, token).ConfigureAwait(false);
             }
             StatusChanged?.Invoke(status);
@@ -208,10 +228,10 @@ public sealed class TgrepClient : IAsyncDisposable
         catch (IOException ex) { WriteLog(source, ex.Message); }
         catch (ObjectDisposedException) { }
     }
-    private static ValueTask ReceiveMatch(string json, string folder, Func<SearchMatch, ValueTask> onMatch)
+    private static ValueTask ReceiveMatch(ReadOnlyMemory<byte> json, string folder, Func<SearchMatch, ValueTask> onMatch)
     {
-        if (string.IsNullOrWhiteSpace(json)) return ValueTask.CompletedTask;
-        var item = TgrepJsonParser.Parse(json, folder);
+        if (json.Length == 0) return ValueTask.CompletedTask;
+        var item = TgrepJsonParser.Parse(json.Span, folder);
         return item.Match != null ? onMatch(item.Match) : ValueTask.CompletedTask;
     }
     private void WriteLog(string source, string text) => Log?.Invoke(new(DateTimeOffset.Now, source, text));

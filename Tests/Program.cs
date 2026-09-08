@@ -29,6 +29,10 @@ try
     var argv = Arguments.Search(opts, Path.Combine(root, "custom index"));
     Check(argv.Contains("-i") && argv.Contains("-F") && argv.Contains("-w") && argv.Contains("--no-index")
         && argv.Contains("!bin/**") && argv[^3] == "--" && argv[^2] == "-serve", "flag mapping and leading-dash pattern");
+    string oneFile = Path.Combine(root, "one file.cs");
+    var fileArgv = Arguments.Search(new SearchOptions(root, "needle", File: oneFile, MaxCount: SearchLimits.MaxMatchesPerFile), null);
+    Check(fileArgv.Contains("-m") && fileArgv[^1] == oneFile && !fileArgv.Contains("-g"),
+        "single-file search uses path and max-count without globs");
     foreach (string verb in new[] { "index", "serve", "status" })
     {
         Check(Arguments.Command(verb, root, null).Count == 2 && Arguments.Command(verb, root, "C:\\index")[^2] == "--index-path",
@@ -55,6 +59,10 @@ try
     var again = TgrepJsonParser.Parse(json, root).Match!;
     Check(ReferenceEquals(match.FullPath, again.FullPath) && ReferenceEquals(match.RelativePath, again.RelativePath),
         "reuse path strings for consecutive rows of the same file");
+    Check(TgrepJsonParser.Parse(Encoding.UTF8.GetBytes(json), root).Match!.Highlights[0] == new TextSpan(4, 6),
+        "UTF-8 span parser matches the string parser");
+    Check(TgrepJsonParser.TryReadHit(Encoding.UTF8.GetBytes(two), root, out var hit)
+        && hit.MatchCount == 2 && hit.FullPath == match.FullPath, "hit parser counts submatches without line text");
     Check(TgrepJsonParser.Parse("{\"type\":\"begin\",\"data\":{\"path\":{\"text\":\"x.cs\"}}}", root).Match == null
         && TgrepJsonParser.Parse("{\"type\":\"end\",\"data\":{\"path\":{\"text\":\"x.cs\"}}}", root).Type == "end", "begin and end events");
     string bytesJson = JsonSerializer.Serialize(new { type = "match", data = new
@@ -95,6 +103,11 @@ try
         await ThrowsAsync<JsonException>(() => ProcessRunner.RunAsync(fake, ["malformed"], root,
             line => { JsonDocument.Parse(line).Dispose(); return ValueTask.CompletedTask; }, null, timeout.Token), "parser failure kills producer without pipe deadlock");
     Check(watchdog.Elapsed < TimeSpan.FromSeconds(8), "parser failure terminates promptly");
+    watchdog.Restart();
+    using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+        await ThrowsAsync<JsonException>(() => ProcessRunner.RunJsonAsync(fake, ["malformed"], root,
+            line => { TgrepJsonParser.Parse(line.Span, root); return ValueTask.CompletedTask; }, null, timeout.Token), "JSON byte pump kills producer without pipe deadlock");
+    Check(watchdog.Elapsed < TimeSpan.FromSeconds(8), "JSON byte pump terminates promptly");
     var flooded = await ProcessRunner.RunAsync(fake, ["stderr"], root, null, null, default);
     Check(flooded.Output.Trim() == "done" && flooded.Error.Length <= 32768, "concurrent stderr drainage and bounded capture");
 
@@ -118,6 +131,11 @@ try
             { results.Clear(); await client.SearchAsync(options, settings, m => { results.Add(m); return ValueTask.CompletedTask; }, testTimeout.Token); }
             await Search(new(repo, "needle", "*.cs", "skip/"));
             Check(results.Count == 2 && results.All(m => m.RelativePath == "one file.cs"), "real tgrep: first index, serve, JSON, include/exclude, ignore case");
+            var hits = new List<FileHit>();
+            await client.SearchHitsAsync(new(repo, "needle", "*.cs", "skip/"), settings,
+                h => { hits.Add(h); return ValueTask.CompletedTask; }, testTimeout.Token);
+            Check(hits.Sum(h => h.MatchCount) == 2 && hits.All(h => h.RelativePath == "one file.cs"),
+                "real tgrep: hit listing without keeping line text");
             Check(pid.HasValue && Alive(pid.Value), "real owned server alive");
             int firstPid = pid!.Value;
             await Search(new(repo, "-serve", "*.cs", "", Literal: true));

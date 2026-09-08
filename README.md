@@ -4,7 +4,7 @@ Windows desktop GUI for [Microsoft tgrep](https://github.com/microsoft/tgrep), w
 
 ## Install
 
-1. Download **tgrep-gui-win-x64.zip** from [Releases](https://github.com/devchristian1337/tgrep-gui/releases).
+1. Download **tgrep-gui-win-x64.zip** or **tgrep-gui-win-arm64.zip** from [Releases](https://github.com/devchristian1337/tgrep-gui/releases).
 2. Extract the zip.
 3. Double-click `tgrep-gui.exe` inside the `tgrep-gui` folder.
 
@@ -71,7 +71,7 @@ dotnet new winui -n WinUiExample -o "$env:TEMP\WinUiExample"
 .\scripts\Build.ps1 -Task Package
 ```
 
-The script publishes to `artifacts\publish\win-x64`, copies `tgrep.exe` next to the app, and writes `artifacts\tgrep-gui-win-x64.zip`. Extract and run `tgrep-gui.exe`. Single-file and trimming are not used, so XAML and bindings stay reliable.
+The script publishes x64 and ARM64, copies the matching `tgrep.exe` next to the app, and writes `artifacts\tgrep-gui-win-x64.zip` and `artifacts\tgrep-gui-win-arm64.zip`. Extract and run `tgrep-gui.exe`. Single-file and trimming are not used, so XAML and bindings stay reliable.
 
 ```powershell
 dotnet publish .\tgrep-gui.csproj -p:PublishProfile=Unpackaged -r win-x64
@@ -99,7 +99,7 @@ The profile produces an **unsigned** package in `artifacts\msix`. To install it 
 2. Optional globs: `*.cs; *.xaml`, `*.{js,ts}`, or `"my files/**"`. Spaces, commas, and semicolons separate filters; quotes preserve spaces. Commas inside `{...}` or `[...]` are preserved.
 3. To exclude directories use `bin/; obj/; node_modules/` (or `**/bin/**`); for files use `*.min.js`. Filters apply to the search and do not permanently shrink the index.
 4. Enter a regex, or enable **Literal text**, then press **Search** or **Enter** in the search box.
-5. Pick a file on the left. The right pane shows lines with highlighted matches; you can select text or multiple lines with Ctrl/Shift.
+5. Pick a file on the left. The right pane then loads that file’s highlighted lines (up to 10,000 matches per file); you can select text or multiple lines with Ctrl/Shift.
 
 | Shortcut | Action |
 |---|---|
@@ -121,7 +121,7 @@ Turning **Use index** off passes `--no-index` and neither builds an index nor st
 
 **Cancel** stops the current search or `index` process and keeps partial results with an explicit message. A server already started stays up and is reused. If it is still busy with the initial index, a later search waits for it to finish; Esc cancels that wait. On app close, current operations are awaited and only child processes started by the app itself are terminated. Processes are never killed by name.
 
-`--line-buffered` avoids CLI pipe buffering. The app displays each JSON record as it arrives; tgrep may still compute some results internally before emitting them. Results are kept in memory and list controls virtualize rows: queries that match millions of lines can use a lot of RAM.
+`--line-buffered` avoids CLI pipe buffering. The file list streams as JSON records arrive; tgrep may still compute some results internally before emitting them. Line text is loaded when a file is selected, at most 10,000 matches per file, with an explicit warning if the file has more.
 
 ### Settings and editor
 

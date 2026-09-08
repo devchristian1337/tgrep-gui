@@ -49,7 +49,7 @@ flowchart TD
 - Roots are normalized with `Path.GetFullPath` and, on Windows, `GetFinalPathNameByHandleW`: junctions, symlinks, device prefixes, trailing slashes, and case do not multiply servers for the same folder.
 - A dictionary of **app-owned** servers per root is protected by a semaphore. Each entry keeps the `Process` object, executable, index path, and stdout/stderr drain tasks.
 - A `.tgrep` directory alone does not mean an index exists: `status` is parsed. That command can exit 0 with “No index found”. The response distinguishes on-disk index, server, and in-progress indexing. Unknown formats or timeouts become visible errors, not an invitation to overwrite the index.
-- `status` queries time out after 5 seconds. Startup with no response times out after 30 seconds; waiting for indexing that is actually in progress is cancellable and does not impose an arbitrary limit for large repositories.
+- `status` queries time out after 5 seconds. Startup with no response times out after 30 seconds; waiting for indexing that is actually in progress is cancellable and does not impose an arbitrary limit for large repositories. Polling while waiting starts at 300 ms and doubles until 1 second.
 - If `meta.json` exists, `root_path` must match the root. A custom index cannot be shared across projects. The index directory cannot be the root itself.
 - An external server is used but not added to the owned-process dictionary. The PID reported by `status` is diagnostic: **it is never used to decide which process to terminate**.
 - `RestartAsync` stops only the owned `Process` for the current root, then starts/waits for the server. If it finds an external server it reports that the owner must stop it. It does not rebuild an existing index.
@@ -69,11 +69,13 @@ A forced GUI process exit from Task Manager or a system crash does not run the a
 
 ## Streaming and UI thread
 
-`SearchAsync` runs on a .NET worker. The parser reads one JSON object per line; `begin`/`end` events are recognized, while only `match` creates results. `summary` and `context` do not produce match rows. `text` and base64 `bytes` fields are supported. Relative paths are resolved against the root used by the process.
+Search listing runs on a .NET worker. stdout is read as UTF-8 bytes (no `StreamReader` on that pipe) and split on newlines; `Utf8JsonReader` parses each object. `begin`/`end` events are recognized; only `match` creates hits. `summary` and `context` do not produce rows. `text` and base64 `bytes` fields are supported. Relative paths are resolved against the root used by the process.
 
-`submatches.start/end` offsets are UTF-8 bytes; the parser converts them to UTF-16 indexes for `TextHighlighter`. Only trailing line terminators are stripped; leading spaces and indentation are kept. The counter sums occurrences, not just lines.
+The listing pass records per-file paths and occurrence counts only: line text and highlights are not kept. The right-hand pane is not filled during that pass. After the listing finishes, or when the user selects a file, a second search uses that file as the tgrep `PATH` and `-m 10000`. A visible warning is shown if the file has more matches than were loaded.
 
-A `Channel<SearchMatch>` bounded to 1,024 items applies backpressure. The consumer adds up to 128 results per batch, then yields the thread for input/render. Observable collections are mutated only on the UI thread. ListViews virtualize items; collected results are kept in memory with no silent truncation.
+`submatches.start/end` offsets are UTF-8 bytes; the parser converts them to UTF-16 indexes for `TextHighlighter` in one forward scan. Only trailing line terminators are stripped; leading spaces and indentation are kept. The counter sums occurrences, not just lines.
+
+A `Channel` bounded to 1,024 items applies backpressure. The consumer adds up to 128 results per batch and yields about every 16 ms so input and paint keep running. Observable collections are mutated only on the UI thread. ListViews virtualize items. There is no silent truncation of the file list.
 
 A 100 ms UI timer reads progress, last server status, and the log queue. The last 1,000 lines are kept in the flyout and at most 2,000 lines are queued. Strings containing `warning`, including `warning: no index`, or `scanning every file` feed the InfoBar and warning count. JSON errors and exit codes other than 0/1 are visible; exit 1 is “no matches”. Indexed counts are updated during preparation and at the end of a search; they are not a continuous idle monitor.
 

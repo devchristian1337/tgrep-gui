@@ -1,7 +1,15 @@
 namespace TgrepGui.Core;
 
+public static class SearchLimits
+{
+    public const int MaxMatchesPerFile = 10_000;
+}
+
 public sealed record SearchOptions(string Folder, string Pattern, string Include = "", string Exclude = "",
-    bool IgnoreCase = true, bool Literal = false, bool WholeWord = false, bool UseIndex = true);
+    bool IgnoreCase = true, bool Literal = false, bool WholeWord = false, bool UseIndex = true,
+    string? File = null, int? MaxCount = null);
+
+public readonly record struct FileHit(string FullPath, string RelativePath, int MatchCount);
 
 public sealed record TextSpan(int Start, int Length);
 public sealed class SearchMatch(string fullPath, string relativePath, long lineNumber, string text,

@@ -37,7 +37,7 @@ public sealed class MainViewModel : ObservableObject
     {
         SearchCommand = new AsyncRelayCommand(SearchAsync, () => IsReady && !IsBusy);
         RestartCommand = new AsyncRelayCommand(RestartAsync, () => IsReady && !IsBusy);
-        CancelCommand = new RelayCommand(() => operation?.Cancel(), () => IsBusy);
+        CancelCommand = new RelayCommand(() => { operation?.Cancel(); lineLoad?.Cancel(); }, () => IsBusy);
         client.Log += log => { pendingLogs.Enqueue(log); while (pendingLogs.Count > 2000) pendingLogs.TryDequeue(out _); };
         client.Progress += progress => Interlocked.Exchange(ref pendingProgress, progress);
         client.StatusChanged += status => Interlocked.Exchange(ref pendingStatus, status);
@@ -51,6 +51,10 @@ public sealed class MainViewModel : ObservableObject
     private long matchCount;
     private int warningCount;
     private FileResult? selectedFile;
+    private SearchOptions? lastSearch;
+    private AppSettings lastSearchSettings = new();
+    private bool listingInProgress;
+    private CancellationTokenSource? lineLoad;
     public string Folder { get => folder; set => SetProperty(ref folder, value); }
     public string Query { get => query; set => SetProperty(ref query, value); }
     public string Include { get => include; set => SetProperty(ref include, value); }
@@ -71,7 +75,20 @@ public sealed class MainViewModel : ObservableObject
     public string Elapsed { get => elapsed; private set => SetProperty(ref elapsed, value); }
     public long MatchCount { get => matchCount; private set => SetProperty(ref matchCount, value); }
     public int WarningCount { get => warningCount; private set => SetProperty(ref warningCount, value); }
-    public FileResult? SelectedFile { get => selectedFile; set { if (SetProperty(ref selectedFile, value)) OnPropertyChanged(nameof(SelectedPath)); } }
+    public FileResult? SelectedFile
+    {
+        get => selectedFile;
+        set
+        {
+            SetSelected(value);
+            if (value is { HasLines: false } && !listingInProgress && lastSearch != null)
+                _ = LoadLinesAsync(value);
+        }
+    }
+    private void SetSelected(FileResult? file)
+    {
+        if (SetProperty(ref selectedFile, file, nameof(SelectedFile))) OnPropertyChanged(nameof(SelectedPath));
+    }
     public string SelectedPath => SelectedFile?.FullPath ?? "Select a file to read the matches";
     public string SettingsPath => store.FilePath;
 
@@ -135,15 +152,18 @@ public sealed class MainViewModel : ObservableObject
     {
         if (string.IsNullOrEmpty(Query)) { ReportError(new ArgumentException("Enter text or a regular expression.")); return; }
         BeginOperation();
+        listingInProgress = true;
         Files.Clear(); byPath.Clear(); SelectedFile = null; MatchCount = 0;
-        var channel = Channel.CreateBounded<SearchMatch>(new BoundedChannelOptions(1024)
+        var channel = Channel.CreateBounded<FileHit>(new BoundedChannelOptions(1024)
             { SingleReader = true, SingleWriter = true, FullMode = BoundedChannelFullMode.Wait });
         var token = operation!.Token;
         var options = new SearchOptions(Folder, Query, Include, Exclude, IgnoreCase, Literal, WholeWord, UseIndex);
         var snapshot = Settings;
+        lastSearch = options;
+        lastSearchSettings = snapshot;
         Task producer = Task.Run(async () =>
         {
-            try { await client.SearchAsync(options, snapshot, match => channel.Writer.WriteAsync(match, token), token); }
+            try { await client.SearchHitsAsync(options, snapshot, hit => channel.Writer.WriteAsync(hit, token), token); }
             finally { channel.Writer.TryComplete(); }
         });
         try
@@ -152,23 +172,21 @@ public sealed class MainViewModel : ObservableObject
             var yieldClock = Stopwatch.StartNew();
             await foreach (var first in channel.Reader.ReadAllAsync(token))
             {
-                var batch = new List<SearchMatch>(128) { first };
+                var batch = new List<FileHit>(128) { first };
                 while (batch.Count < 128 && channel.Reader.TryRead(out var next)) batch.Add(next);
                 touched.Clear();
                 long added = 0;
-                foreach (var match in batch)
+                foreach (var hit in batch)
                 {
-                    if (!byPath.TryGetValue(match.FullPath, out var file))
+                    if (!byPath.TryGetValue(hit.FullPath, out var file))
                     {
-                        file = new(match.FullPath, match.RelativePath);
-                        byPath.Add(match.FullPath, file); Files.Add(file);
+                        file = new(hit.FullPath, hit.RelativePath);
+                        byPath.Add(hit.FullPath, file); Files.Add(file);
                     }
-                    file.Add(match); added += match.MatchCount; touched.Add(file);
-                    SelectedFile ??= file;
+                    file.AddCount(hit.MatchCount); added += hit.MatchCount; touched.Add(file);
                 }
                 foreach (var file in touched) file.NotifyCount();
                 MatchCount += added;
-                // Yield about every frame so input and paint keep running, without a fixed delay per batch.
                 if (yieldClock.ElapsedMilliseconds >= 16)
                 {
                     await Task.Delay(1, token);
@@ -176,19 +194,89 @@ public sealed class MainViewModel : ObservableObject
                 }
             }
             await producer;
+            listingInProgress = false;
             DrainUpdates();
             Message = MatchCount == 0 ? "No matches. Try a different query or filters." : $"Search completed · {Files.Count.ToString("N0", CultureInfo.InvariantCulture)} files";
             try { await RememberFolderAsync(); }
             catch (Exception ex) { ReportWarning("Results are available; recent folders were not saved: " + ex.Message); }
+            var selected = SelectedFile ?? Files.FirstOrDefault();
+            if (selected != null)
+            {
+                SetSelected(selected);
+                await LoadLinesAsync(selected);
+            }
         }
         catch (OperationCanceledException) { Message = "Search cancelled · partial results kept"; }
         catch (Exception ex) { ReportError(ex); }
         finally
         {
+            listingInProgress = false;
             operation!.Cancel();
-            // Always observe the producer, including UI/consumer failures.
             try { await producer; } catch { }
             EndOperation();
+        }
+    }
+
+    private async Task LoadLinesAsync(FileResult file)
+    {
+        if (file.HasLines || lastSearch is null) return;
+        lineLoad?.Cancel();
+        var local = CancellationTokenSource.CreateLinkedTokenSource(operation?.Token ?? CancellationToken.None);
+        lineLoad = local;
+        var token = local.Token;
+        bool showBusy = operation is null;
+        if (showBusy) IsBusy = true;
+        Message = "Loading matches…";
+        var channel = Channel.CreateBounded<SearchMatch>(new BoundedChannelOptions(1024)
+            { SingleReader = true, SingleWriter = true, FullMode = BoundedChannelFullMode.Wait });
+        var options = lastSearch with { File = file.FullPath, MaxCount = SearchLimits.MaxMatchesPerFile, Include = "", Exclude = "" };
+        var snapshot = lastSearchSettings;
+        Task producer = Task.Run(async () =>
+        {
+            try { await client.SearchAsync(options, snapshot, match => channel.Writer.WriteAsync(match, token), token); }
+            finally { channel.Writer.TryComplete(); }
+        });
+        int shown = 0;
+        try
+        {
+            var yieldClock = Stopwatch.StartNew();
+            await foreach (var first in channel.Reader.ReadAllAsync(token))
+            {
+                var batch = new List<SearchMatch>(128) { first };
+                while (batch.Count < 128 && channel.Reader.TryRead(out var next)) batch.Add(next);
+                foreach (var match in batch)
+                {
+                    file.AddLine(match);
+                    shown += match.MatchCount;
+                }
+                if (yieldClock.ElapsedMilliseconds >= 16)
+                {
+                    await Task.Delay(1, token);
+                    yieldClock.Restart();
+                }
+            }
+            await producer;
+            file.MarkLoaded();
+            if (shown < file.Count)
+                ReportWarning($"Showing the first {shown.ToString("N0", CultureInfo.InvariantCulture)} matches in this file. Narrow the query to see the rest.");
+            Message = MatchCount == 0
+                ? "No matches. Try a different query or filters."
+                : $"Search completed · {Files.Count.ToString("N0", CultureInfo.InvariantCulture)} files";
+        }
+        catch (OperationCanceledException)
+        {
+            file.ResetLines();
+        }
+        catch (Exception ex)
+        {
+            file.ResetLines();
+            ReportError(ex);
+        }
+        finally
+        {
+            try { await producer; } catch { }
+            if (showBusy && ReferenceEquals(lineLoad, local)) IsBusy = false;
+            local.Dispose();
         }
     }
 
@@ -261,6 +349,7 @@ public sealed class MainViewModel : ObservableObject
     {
         IsReady = false;
         OnPropertyChanged(nameof(CanEdit));
+        lineLoad?.Cancel();
         operation?.Cancel();
         if (SearchCommand.ExecutionTask is { } search) await search;
         if (RestartCommand.ExecutionTask is { } restart) await restart;

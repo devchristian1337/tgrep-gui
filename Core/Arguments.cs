@@ -48,16 +48,20 @@ public static class Arguments
         if (options.Literal) args.Add("-F");
         if (options.WholeWord) args.Add("-w");
         if (!options.UseIndex) args.Add("--no-index");
-        foreach (var glob in SplitGlobs(options.Include)) { args.Add("-g"); args.Add(glob); }
-        foreach (var glob in SplitGlobs(options.Exclude))
+        if (options.MaxCount is int m && m > 0) { args.Add("-m"); args.Add(m.ToString()); }
+        if (options.File is null)
         {
-            var normalized = glob.TrimStart('!').Replace('\\', '/');
-            if (normalized.EndsWith('/')) normalized += "**";
-            args.Add("-g"); args.Add("!" + normalized);
+            foreach (var glob in SplitGlobs(options.Include)) { args.Add("-g"); args.Add(glob); }
+            foreach (var glob in SplitGlobs(options.Exclude))
+            {
+                var normalized = glob.TrimStart('!').Replace('\\', '/');
+                if (normalized.EndsWith('/')) normalized += "**";
+                args.Add("-g"); args.Add("!" + normalized);
+            }
         }
         AddIndex(args, indexPath);
         // End option parsing: a query such as '-test' or 'serve' remains a pattern.
-        args.Add("--"); args.Add(options.Pattern); args.Add(options.Folder);
+        args.Add("--"); args.Add(options.Pattern); args.Add(options.File ?? options.Folder);
         return args;
     }
 
