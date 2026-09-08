@@ -1,7 +1,6 @@
 # tgrep-gui
 
-<img width="860" height="698" alt="image" src="https://github.com/user-attachments/assets/49160bce-70d5-427c-9e97-738217dbb623" />
-
+<img width="1920" height="1440" alt="900shots_so" src="https://github.com/user-attachments/assets/d95e0985-ccce-4c04-88e5-e5a591e99da6" />
 
 Windows desktop GUI for [Microsoft tgrep](https://github.com/microsoft/tgrep), written in **C# / .NET 10, WinUI 3, Windows App SDK 2.4.0 stable**. Search a folder, pick a matching file, and inspect highlighted lines in a Fluent interface. No WPF, WinForms, UWP, Electron, or webview dependency.
 
