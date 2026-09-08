@@ -1,6 +1,6 @@
 # tgrep-gui
 
-Windows desktop GUI for [Microsoft tgrep](https://github.com/microsoft/tgrep), written in **C# / .NET 10, WinUI 3, Windows App SDK 2.4.0 stable**. It follows the folder → file → lines flow of [rg-gui](https://github.com/kcowolf/rg-gui), with an independent Fluent interface. No WPF, WinForms, UWP, Electron, or webview dependency.
+Windows desktop GUI for [Microsoft tgrep](https://github.com/microsoft/tgrep), written in **C# / .NET 10, WinUI 3, Windows App SDK 2.4.0 stable**. Search a folder, pick a matching file, and inspect highlighted lines in a Fluent interface. No WPF, WinForms, UWP, Electron, or webview dependency.
 
 ## Prerequisites
 
@@ -169,4 +169,3 @@ The project source is split into `Core` (UI-independent engine), `ViewModels`, `
 - [Create a WinUI app with VS 2026 or dotnet new](https://learn.microsoft.com/en-us/windows/apps/get-started/start-here)
 - [Windows App SDK 2.x stable release notes](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/release-notes/windows-app-sdk-2-0)
 - [Microsoft tgrep: commands and architecture](https://github.com/microsoft/tgrep)
-- [rg-gui: usage-flow reference](https://github.com/kcowolf/rg-gui)
