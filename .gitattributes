@@ -1,0 +1,21 @@
+* text=auto
+
+*.cs text diff=csharp
+*.xaml text
+*.csproj text
+*.props text
+*.targets text
+*.json text
+*.md text
+*.ps1 text
+*.xml text
+*.manifest text
+*.config text
+*.pubxml text
+*.gitignore text
+*.gitattributes text
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary

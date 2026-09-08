@@ -1,0 +1,13 @@
+bin/
+obj/
+.vs/
+.idea/
+.tools/
+TestResults/
+artifacts/
+*.user
+*.suo
+*.msix
+*.msixbundle
+*.pfx
+.tgrep/

@@ -1,0 +1,234 @@
+using System.Diagnostics;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+
+namespace TgrepGui.Core;
+
+public sealed class TgrepClient : IAsyncDisposable
+{
+    private sealed record ServerChild(Process Process, string Index, string Executable, Task Output, Task Error);
+    private readonly Dictionary<string, ServerChild> children = new(StringComparer.OrdinalIgnoreCase);
+    private readonly SemaphoreSlim lifecycle = new(1, 1);
+    private readonly CancellationTokenSource lifetime = new();
+    public event Action<TgrepLog>? Log;
+    public event Action<ServerStatus>? StatusChanged;
+    public event Action<string>? Progress;
+
+    public static string Discover(string configuredPath)
+    {
+        if (!string.IsNullOrWhiteSpace(configuredPath))
+        {
+            var configured = Environment.ExpandEnvironmentVariables(configuredPath.Trim().Trim('"'));
+            if (File.Exists(configured)) return Path.GetFullPath(configured);
+        }
+        var local = Path.Combine(AppContext.BaseDirectory, "tgrep.exe");
+        if (File.Exists(local)) return local;
+        foreach (var entry in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
+        {
+            try
+            {
+                var candidate = Path.Combine(Environment.ExpandEnvironmentVariables(entry.Trim().Trim('"')), "tgrep.exe");
+                if (Path.IsPathFullyQualified(candidate) && File.Exists(candidate)) return candidate;
+            }
+            catch (ArgumentException) { }
+        }
+        throw new TgrepMissingException();
+    }
+
+    public async Task SearchAsync(SearchOptions options, AppSettings settings,
+        Func<SearchMatch, Task> onMatch, CancellationToken cancellationToken)
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
+        var token = linked.Token;
+        string folder = ValidateFolder(options.Folder);
+        string exe = Discover(settings.TgrepPath);
+        string? index = GetIndex(settings, folder);
+        options = options with { Folder = folder };
+        // Validate filters before starting any indexing work.
+        var args = Arguments.Search(options, index);
+        if (options.UseIndex) await EnsureServerAsync(folder, exe, index, token).ConfigureAwait(false);
+        else StatusChanged?.Invoke(new(false, null, null, null, false, false, "Scansione senza indice"));
+        Progress?.Invoke("Ricerca in corso…");
+        var result = await ProcessRunner.RunAsync(exe, args, folder, async json =>
+        {
+            if (string.IsNullOrWhiteSpace(json)) return;
+            var item = TgrepJsonParser.Parse(json, folder);
+            if (item.Match != null) await onMatch(item.Match).ConfigureAwait(false);
+        }, line => WriteLog("search", line), token).ConfigureAwait(false);
+        if (result.ExitCode is not (0 or 1))
+            throw new IOException($"tgrep search: codice {result.ExitCode}. {result.Error.Trim()}");
+        if (options.UseIndex)
+        {
+            try { StatusChanged?.Invoke(await GetStatusAsync(folder, exe, index, token).ConfigureAwait(false)); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            { WriteLog("status", "warning: " + ex.Message); }
+        }
+    }
+
+    public async Task RestartAsync(string folder, AppSettings settings, CancellationToken token)
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, lifetime.Token);
+        token = linked.Token;
+        folder = ValidateFolder(folder);
+        string exe = Discover(settings.TgrepPath);
+        string? index = GetIndex(settings, folder);
+        await lifecycle.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            if (children.Remove(folder, out var child)) await StopAsync(child).ConfigureAwait(false);
+            var status = await GetStatusAsync(folder, exe, index, token).ConfigureAwait(false);
+            if (status.Running)
+                throw new InvalidOperationException($"Il server PID {status.Pid} è esterno: non posso riavviarlo. Arrestalo dal programma che lo ha avviato.");
+        }
+        finally { lifecycle.Release(); }
+        await EnsureServerAsync(folder, exe, index, token).ConfigureAwait(false);
+    }
+
+    private async Task EnsureServerAsync(string folder, string exe, string? index, CancellationToken token)
+    {
+        await lifecycle.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            string effectiveIndex = index ?? Path.Combine(folder, ".tgrep");
+            if (children.TryGetValue(folder, out var previous) &&
+                (previous.Process.HasExited || !string.Equals(previous.Index, effectiveIndex, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(previous.Executable, exe, StringComparison.OrdinalIgnoreCase)))
+            {
+                children.Remove(folder);
+                await StopAsync(previous).ConfigureAwait(false);
+            }
+            if (children.Any(p => !p.Key.Equals(folder, StringComparison.OrdinalIgnoreCase)
+                && p.Value.Index.Equals(effectiveIndex, StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException("Questo indice è già usato per un’altra cartella. Scegli un percorso indice dedicato.");
+            await ValidateIndexRootAsync(effectiveIndex, folder, token).ConfigureAwait(false);
+            Progress?.Invoke("Controllo indice e server…");
+            var status = await GetStatusAsync(folder, exe, index, token).ConfigureAwait(false);
+            if (!status.Running)
+            {
+                if (!status.HasIndex)
+                {
+                    Progress?.Invoke("Creazione del primo indice…");
+                    var result = await ProcessRunner.RunAsync(exe, Arguments.Command("index", folder, index), folder,
+                        line => { WriteLog("index", line); Progress?.Invoke(line); return Task.CompletedTask; },
+                        line => { WriteLog("index", line); Progress?.Invoke(line); }, token).ConfigureAwait(false);
+                    if (result.ExitCode != 0) throw new IOException($"Indicizzazione fallita ({result.ExitCode}). {result.Error.Trim()}");
+                }
+                if (children.Remove(folder, out var failed)) await StopAsync(failed).ConfigureAwait(false);
+                token.ThrowIfCancellationRequested();
+                Progress?.Invoke("Avvio server…");
+                var process = ProcessRunner.Start(exe, Arguments.Command("serve", folder, index), folder);
+                Task output = PumpServerAsync(process.StandardOutput, "serve");
+                Task error = PumpServerAsync(process.StandardError, "serve");
+                children[folder] = new(process, effectiveIndex, exe, output, error);
+                WriteLog("serve", $"Avviato processo figlio PID {process.Id} per {folder}");
+            }
+            // Wait for a ready index; never show partial results as a completed search.
+            var startup = Stopwatch.StartNew();
+            while (!status.Running || status.Indexing)
+            {
+                token.ThrowIfCancellationRequested();
+                if (children.TryGetValue(folder, out var child) && child.Process.HasExited)
+                {
+                    // Another GUI may have won tgrep's serve.lock in the meantime.
+                    status = await GetStatusAsync(folder, exe, index, token).ConfigureAwait(false);
+                    if (!status.Running) throw new IOException($"Il server si è arrestato ({child.Process.ExitCode}). Consulta il log.");
+                }
+                if (!status.Running && startup.Elapsed > TimeSpan.FromSeconds(30))
+                    throw new TimeoutException("Il server non risponde dopo 30 secondi. Consulta il log o riprova con Riavvia server.");
+                StatusChanged?.Invoke(status);
+                Progress?.Invoke(status.Indexing ? "Il server sta completando l’indice…" : "Attesa server…");
+                await Task.Delay(300, token).ConfigureAwait(false);
+                status = await GetStatusAsync(folder, exe, index, token).ConfigureAwait(false);
+            }
+            StatusChanged?.Invoke(status);
+            if (!status.WatcherActive) WriteLog("serve", "warning: watcher inattivo; le modifiche ai file potrebbero non essere indicizzate.");
+        }
+        finally { lifecycle.Release(); }
+    }
+
+    public static ServerStatus ParseStatus(string text)
+    {
+        long? Read(string key)
+        {
+            var match = Regex.Match(text, @"^\s*" + key + @":\s*(\d+)", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+            return match.Success && long.TryParse(match.Groups[1].Value, out long value) ? value : null;
+        }
+        bool server = text.Contains("Server status for", StringComparison.OrdinalIgnoreCase);
+        bool disk = text.Contains("Index status for", StringComparison.OrdinalIgnoreCase);
+        bool missing = text.Contains("No index found", StringComparison.OrdinalIgnoreCase);
+        if (!server && !disk && !missing) throw new InvalidDataException("Formato di tgrep status non riconosciuto: " + text.Trim());
+        bool indexing = Regex.IsMatch(text, @"Indexing:\s*(?!complete\b)\S", RegexOptions.IgnoreCase);
+        return new(server || disk, server ? (int?)Read("PID") : null, server ? (int?)Read("Port") : null,
+            Read("Files"), indexing, Regex.IsMatch(text, @"Watcher:\s*active\b", RegexOptions.IgnoreCase), text.Trim());
+    }
+
+    private async Task<ServerStatus> GetStatusAsync(string folder, string exe, string? index, CancellationToken token)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        try
+        {
+            var result = await ProcessRunner.RunAsync(exe, Arguments.Command("status", folder, index), folder,
+                null, line => WriteLog("status", line), timeout.Token).ConfigureAwait(false);
+            if (result.ExitCode != 0) throw new IOException($"tgrep status: {result.Error.Trim()}");
+            return ParseStatus(result.Output);
+        }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested)
+        { throw new TimeoutException("tgrep status non risponde entro 5 secondi."); }
+    }
+
+    private static async Task ValidateIndexRootAsync(string index, string folder, CancellationToken token)
+    {
+        string meta = Path.Combine(index, "meta.json");
+        if (!File.Exists(meta)) return;
+        await using var stream = File.OpenRead(meta);
+        using var json = await JsonDocument.ParseAsync(stream, cancellationToken: token).ConfigureAwait(false);
+        if (json.RootElement.TryGetProperty("root_path", out var root) && root.GetString() is { Length: > 0 } path
+            && !Paths.Normalize(path).Equals(folder, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"L’indice {index} appartiene a un’altra cartella. Scegli un indice dedicato.");
+    }
+
+    private static string ValidateFolder(string folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder)) throw new ArgumentException("Seleziona una cartella.");
+        folder = Paths.Normalize(folder.Trim().Trim('"'));
+        if (!Directory.Exists(folder)) throw new DirectoryNotFoundException("Cartella non trovata: " + folder);
+        return folder;
+    }
+
+    private static string? GetIndex(AppSettings settings, string folder)
+    {
+        if (string.IsNullOrWhiteSpace(settings.IndexPath)) return null;
+        string expanded = Environment.ExpandEnvironmentVariables(settings.IndexPath.Trim().Trim('"'));
+        if (!Path.IsPathFullyQualified(expanded)) throw new ArgumentException("Il percorso dell’indice deve essere assoluto.");
+        string index = Paths.Normalize(expanded);
+        if (index.Equals(folder, StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("L’indice deve avere una directory dedicata, diversa dalla cartella cercata.");
+        return index;
+    }
+
+    private async Task PumpServerAsync(StreamReader reader, string source)
+    {
+        try { await ProcessRunner.PumpAsync(reader, line => { WriteLog(source, line); return Task.CompletedTask; }).ConfigureAwait(false); }
+        catch (IOException ex) { WriteLog(source, ex.Message); }
+        catch (ObjectDisposedException) { }
+    }
+    private void WriteLog(string source, string text) => Log?.Invoke(new(DateTimeOffset.Now, source, text));
+    private static async Task StopAsync(ServerChild child)
+    {
+        ProcessRunner.Kill(child.Process);
+        await child.Process.WaitForExitAsync().ConfigureAwait(false);
+        await Task.WhenAll(child.Output, child.Error).ConfigureAwait(false);
+        child.Process.Dispose();
+    }
+    public async ValueTask DisposeAsync()
+    {
+        await lifetime.CancelAsync();
+        await lifecycle.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            foreach (var child in children.Values) await StopAsync(child).ConfigureAwait(false);
+            children.Clear();
+        }
+        finally { lifecycle.Release(); }
+    }
+}

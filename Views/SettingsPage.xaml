@@ -1,0 +1,52 @@
+<Page x:Class="TgrepGui.Views.SettingsPage"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ScrollViewer HorizontalContentAlignment="Stretch" HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled">
+    <StackPanel Margin="24,24" Spacing="20">
+      <TextBlock Text="Impostazioni" FontSize="28" FontWeight="SemiBold" />
+      <TextBlock Text="Configura il motore di ricerca e il tuo editor." Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+      <InfoBar x:Name="SaveInfo" IsOpen="False" />
+      <Border Style="{StaticResource Card}" Padding="20">
+        <StackPanel Spacing="16">
+          <TextBlock Text="MOTORE DI RICERCA" Style="{StaticResource SectionLabel}" />
+          <Grid ColumnSpacing="8">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <TextBox x:Name="TgrepPathBox" Header="Percorso tgrep.exe" PlaceholderText="Automatico: cartella dell’app, poi PATH" />
+            <Button Grid.Column="1" Content="Sfoglia…" VerticalAlignment="Bottom" Click="BrowseTgrep_Click" />
+          </Grid>
+          <Grid ColumnSpacing="8">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <TextBox x:Name="IndexPathBox" Header="Percorso indice personalizzato" PlaceholderText="Vuoto = .tgrep nella cartella cercata" />
+            <Button Grid.Column="1" Content="Sfoglia…" VerticalAlignment="Bottom" Click="BrowseIndex_Click" />
+          </Grid>
+          <TextBlock Text="Usa una directory indice dedicata per ogni progetto. Un percorso personalizzato si applica a tutti i comandi tgrep." TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </StackPanel>
+      </Border>
+      <Border Style="{StaticResource Card}" Padding="20">
+        <StackPanel Spacing="16">
+          <TextBlock Text="EDITOR" Style="{StaticResource SectionLabel}" />
+          <Grid ColumnSpacing="8">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <TextBox x:Name="EditorPathBox" Header="Eseguibile dell’editor" PlaceholderText="Vuoto = applicazione predefinita di Windows" />
+            <Button Grid.Column="1" Content="Sfoglia…" VerticalAlignment="Bottom" Click="BrowseEditor_Click" />
+          </Grid>
+          <TextBox x:Name="EditorArgsBox" Header="Argomenti · $FILE e $LINE" FontFamily="Consolas" />
+          <TextBlock Text="Visual Studio Code: --goto &quot;$FILE:$LINE&quot;   ·   Notepad++: -n$LINE &quot;$FILE&quot;" FontSize="12" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+          <TextBlock Text="Per aprire alla riga esatta, configura un editor che supporti $LINE. L’applicazione predefinita apre soltanto il file." FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </StackPanel>
+      </Border>
+      <Border Style="{StaticResource Card}" Padding="20">
+        <StackPanel Spacing="12">
+          <TextBlock Text="PREFERENZE" Style="{StaticResource SectionLabel}" />
+          <ComboBox x:Name="ThemeBox" Header="Tema" HorizontalAlignment="Stretch">
+            <ComboBoxItem Content="Sistema" Tag="System" /><ComboBoxItem Content="Chiaro" Tag="Light" /><ComboBoxItem Content="Scuro" Tag="Dark" />
+          </ComboBox>
+          <CheckBox x:Name="IgnoreCaseBox" Content="Ignora maiuscole per impostazione predefinita" />
+          <CheckBox x:Name="LiteralBox" Content="Testo letterale per impostazione predefinita" />
+        </StackPanel>
+      </Border>
+      <Button x:Name="SaveButton" Content="Salva impostazioni" Style="{StaticResource AccentButtonStyle}" Click="Save_Click" />
+      <TextBlock x:Name="SettingsLocation" FontSize="12" TextWrapping="Wrap" IsTextSelectionEnabled="True" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+    </StackPanel>
+  </ScrollViewer>
+</Page>
