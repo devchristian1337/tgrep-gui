@@ -30,7 +30,7 @@ public sealed partial class MainWindow : Window
         ViewModel = new();
         Root.DataContext = ViewModel;
         ViewModel.ThemeChanged += ApplyTheme;
-        if (MicaController.IsSupported()) SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
+        if (MicaController.IsSupported()) SystemBackdrop = new MicaBackdrop { Kind = MicaKind.Base };
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
         ApplyTitleBarTheme();

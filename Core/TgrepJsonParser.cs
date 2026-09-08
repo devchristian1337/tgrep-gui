@@ -57,7 +57,9 @@ public static class TgrepJsonParser
             if (reader.ValueTextEquals("type"u8))
             {
                 reader.Read();
-                type = reader.GetString() ?? "";
+                type = reader.ValueTextEquals("match"u8) ? "match"
+                    : reader.ValueTextEquals("begin"u8) ? "begin"
+                    : reader.ValueTextEquals("end"u8) ? "end" : reader.GetString() ?? "";
             }
             else if (reader.ValueTextEquals("data"u8))
             {

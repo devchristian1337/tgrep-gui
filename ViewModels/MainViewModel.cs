@@ -18,7 +18,10 @@ public sealed class MainViewModel : ObservableObject
     private readonly SettingsStore store = new();
     private readonly ConcurrentQueue<TgrepLog> pendingLogs = new();
     private readonly Dictionary<string, FileResult> byPath = new(StringComparer.OrdinalIgnoreCase);
-    private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(100) };
+    private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private readonly PreviewCache<FileResult> previews = new(4, 32L * 1024 * 1024, file => file.ResetLines());
+    private Task lineLoadTask = Task.CompletedTask;
+    private const long PreviewByteLimit = 8L * 1024 * 1024;
     private readonly Stopwatch clock = new();
     private CancellationTokenSource? operation;
     private string? pendingProgress;
@@ -43,6 +46,13 @@ public sealed class MainViewModel : ObservableObject
         client.StatusChanged += status => Interlocked.Exchange(ref pendingStatus, status);
         timer.Tick += (_, _) => DrainUpdates();
         timer.Start();
+        bool wasEmpty = true;
+        Files.CollectionChanged += (_, _) =>
+        {
+            if (wasEmpty == NoFiles) return;
+            wasEmpty = NoFiles;
+            OnPropertyChanged(nameof(NoFiles));
+        };
     }
 
     private string folder = "", query = "", include = "", exclude = "", message = "Choose a folder and search your code.";
@@ -57,14 +67,21 @@ public sealed class MainViewModel : ObservableObject
     private CancellationTokenSource? lineLoad;
     public string Folder { get => folder; set => SetProperty(ref folder, value); }
     public string Query { get => query; set => SetProperty(ref query, value); }
-    public string Include { get => include; set => SetProperty(ref include, value); }
-    public string Exclude { get => exclude; set => SetProperty(ref exclude, value); }
+    public string Include { get => include; set { if (SetProperty(ref include, value)) OnPropertyChanged(nameof(FilterSummary)); } }
+    public string Exclude { get => exclude; set { if (SetProperty(ref exclude, value)) OnPropertyChanged(nameof(FilterSummary)); } }
+    private bool filtersExpanded;
+    public bool FiltersExpanded { get => filtersExpanded; set => SetProperty(ref filtersExpanded, value); }
+    public string FilterSummary => string.IsNullOrWhiteSpace(Include) && string.IsNullOrWhiteSpace(Exclude)
+        ? "All files" : "Custom filters applied";
+    public int FileCount => Files.Count;
+    public bool NoFiles => Files.Count == 0;
+    public bool NoSelection => SelectedFile is null;
     public bool IgnoreCase { get => ignoreCase; set => SetProperty(ref ignoreCase, value); }
     public bool Literal { get => literal; set => SetProperty(ref literal, value); }
     public bool WholeWord { get => wholeWord; set => SetProperty(ref wholeWord, value); }
     public bool UseIndex { get => useIndex; set => SetProperty(ref useIndex, value); }
     public bool IsReady { get => isReady; private set { SetProperty(ref isReady, value); NotifyCommands(); } }
-    public bool IsBusy { get => isBusy; private set { SetProperty(ref isBusy, value); OnPropertyChanged(nameof(CanEdit)); NotifyCommands(); } }
+    public bool IsBusy { get => isBusy; private set { SetProperty(ref isBusy, value); timer.Interval = value ? TimeSpan.FromMilliseconds(100) : TimeSpan.FromSeconds(1); OnPropertyChanged(nameof(CanEdit)); NotifyCommands(); } }
     public bool CanEdit => IsReady && !IsBusy;
     public bool MissingTgrep { get => missingTgrep; set => SetProperty(ref missingTgrep, value); }
     public string Message { get => message; private set => SetProperty(ref message, value); }
@@ -80,16 +97,27 @@ public sealed class MainViewModel : ObservableObject
         get => selectedFile;
         set
         {
+            if (ReferenceEquals(selectedFile, value)) return;
+            lineLoad?.Cancel();
             SetSelected(value);
-            if (value is { HasLines: false } && !listingInProgress && lastSearch != null)
-                _ = LoadLinesAsync(value);
+            if (value != null && !listingInProgress && lastSearch != null && IsReady)
+                _ = QueueLineLoadAsync(value);
         }
     }
     private void SetSelected(FileResult? file)
     {
-        if (SetProperty(ref selectedFile, file, nameof(SelectedFile))) OnPropertyChanged(nameof(SelectedPath));
+        if (!ReferenceEquals(selectedFile, file))
+        {
+            if (file != null) previews.Take(file);
+            if (selectedFile is { HasLines: true } previous) previews.Keep(previous, previous.RetainedBytes);
+        }
+        if (SetProperty(ref selectedFile, file, nameof(SelectedFile)))
+        {
+            OnPropertyChanged(nameof(SelectedPath));
+            OnPropertyChanged(nameof(NoSelection));
+        }
     }
-    public string SelectedPath => SelectedFile?.FullPath ?? "Select a file to read the matches";
+    public string SelectedPath => SelectedFile?.FullPath ?? "Match preview";
     public string SettingsPath => store.FilePath;
 
     private void NotifyCommands()
@@ -153,7 +181,8 @@ public sealed class MainViewModel : ObservableObject
         if (string.IsNullOrEmpty(Query)) { ReportError(new ArgumentException("Enter text or a regular expression.")); return; }
         BeginOperation();
         listingInProgress = true;
-        Files.Clear(); byPath.Clear(); SelectedFile = null; MatchCount = 0;
+        Files.Clear(); byPath.Clear(); SelectedFile = null; previews.Clear(); MatchCount = 0;
+        OnPropertyChanged(nameof(FileCount));
         var channel = Channel.CreateBounded<FileHit>(new BoundedChannelOptions(1024)
             { SingleReader = true, SingleWriter = true, FullMode = BoundedChannelFullMode.Wait });
         var token = operation!.Token;
@@ -169,10 +198,11 @@ public sealed class MainViewModel : ObservableObject
         try
         {
             var touched = new HashSet<FileResult>();
+            var batch = new List<FileHit>(128);
             var yieldClock = Stopwatch.StartNew();
             await foreach (var first in channel.Reader.ReadAllAsync(token))
             {
-                var batch = new List<FileHit>(128) { first };
+                batch.Clear(); batch.Add(first);
                 while (batch.Count < 128 && channel.Reader.TryRead(out var next)) batch.Add(next);
                 touched.Clear();
                 long added = 0;
@@ -187,6 +217,7 @@ public sealed class MainViewModel : ObservableObject
                 }
                 foreach (var file in touched) file.NotifyCount();
                 MatchCount += added;
+                OnPropertyChanged(nameof(FileCount));
                 if (yieldClock.ElapsedMilliseconds >= 16)
                 {
                     await Task.Delay(1, token);
@@ -203,7 +234,8 @@ public sealed class MainViewModel : ObservableObject
             if (selected != null)
             {
                 SetSelected(selected);
-                await LoadLinesAsync(selected);
+                _ = QueueLineLoadAsync(selected);
+                await WaitForLineLoadsAsync();
             }
         }
         catch (OperationCanceledException) { Message = "Search cancelled · partial results kept"; }
@@ -215,6 +247,30 @@ public sealed class MainViewModel : ObservableObject
             try { await producer; } catch { }
             EndOperation();
         }
+    }
+
+    private async Task WaitForLineLoadsAsync()
+    {
+        Task current;
+        do
+        {
+            current = lineLoadTask;
+            await current;
+        } while (!ReferenceEquals(current, lineLoadTask));
+    }
+
+    private Task QueueLineLoadAsync(FileResult file)
+    {
+        lineLoad?.Cancel();
+        return lineLoadTask = LoadAfterAsync(lineLoadTask, file);
+    }
+
+    private async Task LoadAfterAsync(Task previous, FileResult file)
+    {
+        await previous;
+        previous = Task.CompletedTask; // Do not retain a chain of completed preview tasks.
+        if (ReferenceEquals(SelectedFile, file) && IsReady)
+            await LoadLinesAsync(file);
     }
 
     private async Task LoadLinesAsync(FileResult file)
@@ -237,27 +293,37 @@ public sealed class MainViewModel : ObservableObject
             finally { channel.Writer.TryComplete(); }
         });
         int shown = 0;
+        bool previewLimited = false;
         try
         {
             var yieldClock = Stopwatch.StartNew();
+            var batch = new List<SearchMatch>(128);
             await foreach (var first in channel.Reader.ReadAllAsync(token))
             {
-                var batch = new List<SearchMatch>(128) { first };
+                batch.Clear(); batch.Add(first);
                 while (batch.Count < 128 && channel.Reader.TryRead(out var next)) batch.Add(next);
                 foreach (var match in batch)
                 {
+                    // Keep at least one line readable, even if that single line exceeds the budget.
+                    if (file.Lines.Count > 0 && file.RetainedBytes + FileResult.EstimateBytes(match) > PreviewByteLimit)
+                    {
+                        previewLimited = true;
+                        break;
+                    }
                     file.AddLine(match);
                     shown += match.MatchCount;
                 }
+                if (previewLimited) { local.Cancel(); break; }
                 if (yieldClock.ElapsedMilliseconds >= 16)
                 {
                     await Task.Delay(1, token);
                     yieldClock.Restart();
                 }
             }
-            await producer;
+            try { await producer; } catch (OperationCanceledException) when (previewLimited) { }
             file.MarkLoaded();
-            if (shown < file.Count)
+            if (!ReferenceEquals(SelectedFile, file)) previews.Keep(file, file.RetainedBytes);
+            if (previewLimited || shown < file.Count)
                 ReportWarning($"Showing the first {shown.ToString("N0", CultureInfo.InvariantCulture)} matches in this file. Narrow the query to see the rest.");
             Message = MatchCount == 0
                 ? "No matches. Try a different query or filters."
@@ -275,7 +341,11 @@ public sealed class MainViewModel : ObservableObject
         finally
         {
             try { await producer; } catch { }
-            if (showBusy && ReferenceEquals(lineLoad, local)) IsBusy = false;
+            if (ReferenceEquals(lineLoad, local))
+            {
+                lineLoad = null;
+                if (showBusy) IsBusy = false;
+            }
             local.Dispose();
         }
     }
@@ -353,7 +423,9 @@ public sealed class MainViewModel : ObservableObject
         operation?.Cancel();
         if (SearchCommand.ExecutionTask is { } search) await search;
         if (RestartCommand.ExecutionTask is { } restart) await restart;
+        await WaitForLineLoadsAsync();
         timer.Stop();
+        previews.Clear();
         await Task.Run(async () => await client.DisposeAsync());
     }
 }

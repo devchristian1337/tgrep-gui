@@ -54,7 +54,7 @@ flowchart TD
 - An external server is used but not added to the owned-process dictionary. The PID reported by `status` is diagnostic: **it is never used to decide which process to terminate**.
 - `RestartAsync` stops only the owned `Process` for the current root, then starts/waits for the server. If it finds an external server it reports that the owner must stop it. It does not rebuild an existing index.
 - If two GUI instances try to start together, tgrep’s `serve.lock` arbitrates exclusivity. If the process just started exits but `status` finds another ready server, the app reuses the latter.
-- Changing index path or executable retires the old owned server for the same root before the new start. Servers for other roots are kept until Exit for reuse.
+- Changing index path or executable retires the old owned server for the same root before the new start. At most two app-owned servers are retained. Access refreshes a monotonic LRU timestamp; starting a third retires the least recently used child, preserving its on-disk index. External servers are never evicted.
 - The watcher belongs to tgrep. No Git watcher or `index` command is tied to a branch change in the GUI.
 
 ## Processes, cancellation, and shutdown
@@ -71,13 +71,13 @@ A forced GUI process exit from Task Manager or a system crash does not run the a
 
 Search listing runs on a .NET worker. stdout is read as UTF-8 bytes (no `StreamReader` on that pipe) and split on newlines; `Utf8JsonReader` parses each object. `begin`/`end` events are recognized; only `match` creates hits. `summary` and `context` do not produce rows. `text` and base64 `bytes` fields are supported. Relative paths are resolved against the root used by the process.
 
-The listing pass records per-file paths and occurrence counts only: line text and highlights are not kept. The right-hand pane is not filled during that pass. After the listing finishes, or when the user selects a file, a second search uses that file as the tgrep `PATH` and `-m 10000`. A visible warning is shown if the file has more matches than were loaded.
+The listing pass records per-file paths and occurrence counts only: line text and highlights are not kept. The right-hand pane is not filled during that pass. After the listing finishes, or when the user selects a file, a second search uses that file as the tgrep `PATH` and `-m 10000`. A visible warning is shown if the file has more matches than were loaded. Each preview also has an 8 MiB estimated retained-data budget (one oversized first line is allowed). Up to four inactive previews are cached, within 32 MiB estimated; selection removes a preview from that cache and makes it active. Eviction clears text, highlights and the backing list capacity. Returning to an evicted preview reloads it. File selection cancels and serializes previous loads, preventing an older cancellation from clearing newer rows; shutdown awaits those loads.
 
 `submatches.start/end` offsets are UTF-8 bytes; the parser converts them to UTF-16 indexes for `TextHighlighter` in one forward scan. Only trailing line terminators are stripped; leading spaces and indentation are kept. The counter sums occurrences, not just lines.
 
-A `Channel` bounded to 1,024 items applies backpressure. The consumer adds up to 128 results per batch and yields about every 16 ms so input and paint keep running. Observable collections are mutated only on the UI thread. ListViews virtualize items. There is no silent truncation of the file list.
+A `Channel` bounded to 1,024 items applies backpressure. The consumer reuses its batch buffer, updates the file-count label once per batch, and adds up to 128 results per batch and yields about every 16 ms so input and paint keep running. Observable collections are mutated only on the UI thread. ListViews virtualize items. There is no silent truncation of the file list.
 
-A 100 ms UI timer reads progress, last server status, and the log queue. The last 1,000 lines are kept in the flyout and at most 2,000 lines are queued. Strings containing `warning`, including `warning: no index`, or `scanning every file` feed the InfoBar and warning count. JSON errors and exit codes other than 0/1 are visible; exit 1 is “no matches”. Indexed counts are updated during preparation and at the end of a search; they are not a continuous idle monitor.
+A UI timer reads progress, last server status, and the log queue every 100 ms during operations and every second while idle. The last 1,000 lines are kept in the flyout and at most 2,000 lines are queued. Strings containing `warning`, including `warning: no index`, or `scanning every file` feed the InfoBar and warning count. JSON errors and exit codes other than 0/1 are visible; exit 1 is “no matches”. Indexed counts are updated during preparation and at the end of a search; they are not a continuous idle monitor.
 
 ## Persistence and file opening
 
@@ -90,3 +90,5 @@ A 100 ms UI timer reads progress, last server status, and the log queue. The las
 The application project explicitly excludes `Core`, `Tests`, `.tools`, and `artifacts` from automatic source inclusion. The core library is referenced as a project. Unpackaged publish is self-contained and single-file (`PublishSingleFile`, with Windows App SDK and `tgrep.exe` bundled); the first launch extracts to a temporary folder. The published host must stay named `tgrep-gui.exe` so WinUI can load `tgrep-gui.pri`. Release zips therefore contain that one file rather than a renamed EXE. The MSIX profile is optional and does not sign or install certificates.
 
 `Tests/Program.cs` checks argv, Unicode, base64, status, settings, pipes, and cancellation. `FakeTgrep` reproduces large stderr, waits, and malformed JSON. When a real tgrep path is passed, the suite creates temporary repositories and exercises the full cycle, including external server survival. No test uses existing project data or indexes.
+
+The UTF-8 pump scans only newly received bytes with span-based newline search, avoiding quadratic rescanning on fragmented long lines. JSON event envelopes are value types and common event names reuse literals. Adjacent hits for the same file are coalesced before the channel: the first hit is immediate; subsequent groups flush on file changes, 128 rows, completion, or the next hit after 16 ms. See PERFORMANCE.md for measurements and limits.

@@ -6,7 +6,8 @@ namespace TgrepGui.Core;
 
 public sealed class TgrepClient : IAsyncDisposable
 {
-    private sealed record ServerChild(Process Process, string Index, string Executable, Task Output, Task Error);
+    private sealed record ServerChild(Process Process, string Index, string Executable, Task Output, Task Error)
+    { public long LastUsed { get; set; } = Stopwatch.GetTimestamp(); }
     private readonly Dictionary<string, ServerChild> children = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim lifecycle = new(1, 1);
     private readonly CancellationTokenSource lifetime = new();
@@ -67,12 +68,14 @@ public sealed class TgrepClient : IAsyncDisposable
         if (options.UseIndex) await EnsureServerAsync(folder, exe, index, token).ConfigureAwait(false);
         else StatusChanged?.Invoke(new(false, null, null, null, false, false, "Scanning without index"));
         Progress?.Invoke("Searching…");
+        var batcher = onHit is null ? null : new FileHitBatcher(onHit);
         var result = await ProcessRunner.RunJsonAsync(exe, args, folder, json =>
         {
             if (onHit != null)
-                return TgrepJsonParser.TryReadHit(json.Span, folder, out var hit) ? onHit(hit) : ValueTask.CompletedTask;
+                return TgrepJsonParser.TryReadHit(json.Span, folder, out var hit) ? batcher!.AddAsync(hit) : ValueTask.CompletedTask;
             return ReceiveMatch(json, folder, onMatch!);
         }, line => WriteLog("search", line), token).ConfigureAwait(false);
+        if (batcher != null) await batcher.FlushAsync().ConfigureAwait(false);
         if (result.ExitCode is not (0 or 1))
             throw new IOException($"tgrep search: exit {result.ExitCode}. {result.Error.Trim()}");
         if (options.UseIndex)
@@ -133,6 +136,13 @@ public sealed class TgrepClient : IAsyncDisposable
                 }
                 if (children.Remove(folder, out var failed)) await StopAsync(failed).ConfigureAwait(false);
                 token.ThrowIfCancellationRequested();
+                // Keep two recent projects warm; old indexes remain on disk.
+                while (children.Count >= 2)
+                {
+                    var oldest = children.MinBy(pair => pair.Value.LastUsed);
+                    children.Remove(oldest.Key);
+                    await StopAsync(oldest.Value).ConfigureAwait(false);
+                }
                 Progress?.Invoke("Starting server…");
                 var process = ProcessRunner.Start(exe, Arguments.Command("serve", folder, index), folder);
                 Task output = PumpServerAsync(process.StandardOutput, "serve");
@@ -160,6 +170,7 @@ public sealed class TgrepClient : IAsyncDisposable
                 delayMs = Math.Min(1000, delayMs * 2);
                 status = await GetStatusAsync(folder, exe, index, token).ConfigureAwait(false);
             }
+            if (children.TryGetValue(folder, out var current)) current.LastUsed = Stopwatch.GetTimestamp();
             StatusChanged?.Invoke(status);
             if (!status.WatcherActive) WriteLog("serve", "warning: watcher inactive; file changes may not be indexed.");
         }

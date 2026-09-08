@@ -123,15 +123,19 @@ public static class ProcessRunner
                 }
                 int read = await stream.ReadAsync(buffer.AsMemory(buffered, buffer.Length - buffered), token).ConfigureAwait(false);
                 if (read == 0) break;
+                int scanFrom = buffered; // The retained prefix was scanned on the previous read.
                 buffered += read;
                 int start = 0;
-                for (int i = start; i < buffered; i++)
+                while (scanFrom < buffered)
                 {
-                    if (buffer[i] != (byte)'\n') continue;
-                    int end = i;
+                    int offset = buffer.AsSpan(scanFrom, buffered - scanFrom).IndexOf((byte)'\n');
+                    if (offset < 0) break;
+                    int newline = scanFrom + offset;
+                    int end = newline;
                     if (end > start && buffer[end - 1] == (byte)'\r') end--;
                     if (end > start) await receive(buffer.AsMemory(start, end - start)).ConfigureAwait(false);
-                    start = i + 1;
+                    start = newline + 1;
+                    scanFrom = start;
                 }
                 if (start == 0) continue;
                 int remaining = buffered - start;

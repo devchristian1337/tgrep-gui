@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using TgrepGui.Core;
 
+if (args is ["--performance"]) { await Performance.RunAsync(); return; }
 int passed = 0;
 void Check(bool condition, string name)
 {
@@ -23,6 +24,7 @@ string root = Path.Combine(Path.GetTempPath(), "tgrep GUI tests " + Guid.NewGuid
 Directory.CreateDirectory(root);
 try
 {
+    await PerformanceTests.RunAsync(Check);
     var globs = Arguments.SplitGlobs("*.cs;*.xaml,*.{js,ts} \"my files/**\" [a,;].txt");
     Check(globs.SequenceEqual(new[] { "*.cs", "*.xaml", "*.{js,ts}", "my files/**", "[a,;].txt" }), "glob separators, braces, quotes and classes");
     var opts = new SearchOptions(root, "-serve", "*.cs;*.xaml", "bin/;*.min.js", true, true, true, false);
@@ -178,6 +180,29 @@ try
             Check(results.Count == 1 && !Directory.Exists(Path.Combine(another, ".tgrep")), "no-index on fresh folder never creates index or server");
         }
         Check(!Alive(restartedPid!.Value), "app disposal terminates owned server");
+        await using (var boundedClient = new TgrepClient())
+        {
+            var roots = Enumerable.Range(0, 3).Select(i => Path.Combine(root, $"cache-repo-{i}")).ToArray();
+            var pids = new int[3];
+            int active = 0;
+            boundedClient.StatusChanged += status => { if (status.Running) pids[active] = status.Pid!.Value; };
+            async Task Visit(int index)
+            {
+                active = index;
+                await boundedClient.SearchHitsAsync(new(roots[index], "needle"),
+                    new() { TgrepPath = exe }, _ => ValueTask.CompletedTask, testTimeout.Token);
+            }
+            foreach (string directory in roots)
+            {
+                Directory.CreateDirectory(directory);
+                await File.WriteAllTextAsync(Path.Combine(directory, "file.txt"), "needle");
+            }
+            await Visit(0); await Visit(1);
+            int reused = pids[0], retired = pids[1];
+            await Visit(0); await Visit(2);
+            Check(pids[0] == reused && Alive(reused) && !Alive(retired) && Alive(pids[2]),
+                "server cache keeps two recent owned servers and evicts the least recently used");
+        }
         using var external = ProcessRunner.Start(exe, Arguments.Command("serve", repo, settings.IndexPath), repo);
         Task stdout = external.StandardOutput.ReadToEndAsync(), stderr = external.StandardError.ReadToEndAsync();
         try

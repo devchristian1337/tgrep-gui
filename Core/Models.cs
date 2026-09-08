@@ -22,7 +22,7 @@ public sealed class SearchMatch(string fullPath, string relativePath, long lineN
     public IReadOnlyList<TextSpan> Highlights { get; } = highlights;
     public int MatchCount { get; } = matchCount;
 }
-public sealed record JsonEvent(string Type, string? Path, SearchMatch? Match);
+public readonly record struct JsonEvent(string Type, string? Path, SearchMatch? Match);
 public sealed record ServerStatus(bool HasIndex, int? Pid, int? Port, long? Files, bool Indexing,
     bool WatcherActive, string Description)
 {
