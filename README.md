@@ -2,7 +2,17 @@
 
 Windows desktop GUI for [Microsoft tgrep](https://github.com/microsoft/tgrep), written in **C# / .NET 10, WinUI 3, Windows App SDK 2.4.0 stable**. Search a folder, pick a matching file, and inspect highlighted lines in a Fluent interface. No WPF, WinForms, UWP, Electron, or webview dependency.
 
+## Install
+
+1. Download **tgrep-gui-win-x64.zip** from [Releases](https://github.com/devchristian1337/tgrep-gui/releases).
+2. Extract the zip.
+3. Double-click `tgrep-gui.exe` inside the `tgrep-gui` folder.
+
+Keep every extracted file next to the EXE; this is not a single-file build. .NET, Windows App SDK, and Microsoft tgrep 1.0.4 are included. Windows 10 64-bit (build 17763) or later is required. No installer, certificate, or Developer Mode is needed.
+
 ## Prerequisites
+
+These apply when you build from source. The Release zip does not require the .NET SDK.
 
 - Windows 11 recommended; Windows 10 build 17763 minimum. Mica is enabled where supported.
 - **.NET 10 SDK** x64, or ARM64 to build on ARM. `dotnet --list-sdks` must list a 10.0 SDK, not only the runtime.
@@ -58,10 +68,14 @@ dotnet new winui -n WinUiExample -o "$env:TEMP\WinUiExample"
 ### Self-contained EXE distribution
 
 ```powershell
-dotnet publish .\tgrep-gui.csproj -p:PublishProfile=Unpackaged -r win-x64
+.\scripts\Build.ps1 -Task Package
 ```
 
-Distribute the entire `artifacts\publish\win-x64` folder: it includes .NET and Windows App SDK. tgrep remains a configurable external executable; you can copy it next to the app. Single-file and trimming are not used, so XAML and bindings stay reliable.
+The script publishes to `artifacts\publish\win-x64`, copies `tgrep.exe` next to the app, and writes `artifacts\tgrep-gui-win-x64.zip`. Extract and run `tgrep-gui.exe`. Single-file and trimming are not used, so XAML and bindings stay reliable.
+
+```powershell
+dotnet publish .\tgrep-gui.csproj -p:PublishProfile=Unpackaged -r win-x64
+```
 
 For ARM64:
 
