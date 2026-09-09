@@ -12,7 +12,7 @@ Windows desktop GUI for [Microsoft tgrep](https://github.com/microsoft/tgrep), w
 2. Extract it. The zip contains a single file, `tgrep-gui.exe`.
 3. Double-click **tgrep-gui.exe**. Do not rename it: WinUI loads resources from `tgrep-gui.pri`, and a different file name crashes at startup.
 
-The EXE is self-contained: .NET, Windows App SDK, and Microsoft tgrep 1.0.4 are bundled. The first launch extracts them to a temporary folder. Windows 10 64-bit (build 17763) or later is required. No installer, certificate, or Developer Mode is needed.
+The EXE is self-contained: .NET, Windows App SDK, and Microsoft tgrep 1.0.5 are bundled. The first launch extracts them to a temporary folder. Windows 10 64-bit (build 17763) or later is required. No installer, certificate, or Developer Mode is needed.
 
 The GUI automatically checks official Microsoft tgrep releases in the background at startup. A newer stable Windows engine is downloaded for the app architecture, checked against GitHub's SHA-256 digest, and tested with temporary files (search, JSON previews, index/server startup, and index upgrade/fallback). A successful update is used **after restarting the app**. Searches in the current session keep their selected engine. Check **Log** for update results.
 
@@ -31,7 +31,7 @@ These apply when you build from source. The Release zip does not require the .NE
 - Visual Studio 2026 with WinUI/.NET desktop development for the F5 experience. CLI builds work without Visual Studio: Windows SDK BuildTools is restored from NuGet.
 - Windows App SDK **2.4.0 stable**, CommunityToolkit.Mvvm **8.4.2**, CommunityToolkit.WinUI.Controls.Sizers **8.2.251219**: all declared in the project and restored automatically. The Windows App SDK runtime is included in the output; a separate install is not required.
 - Windows Developer Mode for MSIX development/distribution. The default **unpackaged** executable does not require an MSIX identity, certificates, or Developer Mode.
-- [tgrep for Windows](https://github.com/microsoft/tgrep/releases): download `tgrep-v*-x86_64-pc-windows-msvc.zip`, or `tgrep-v*-aarch64-pc-windows-msvc.zip` on ARM64. Extract the package and select `tgrep.exe` in Settings. Integration tests were run against **1.0.4**.
+- [tgrep for Windows](https://github.com/microsoft/tgrep/releases): download `tgrep-v*-x86_64-pc-windows-msvc.zip`, or `tgrep-v*-aarch64-pc-windows-msvc.zip` on ARM64. Extract the package and select `tgrep.exe` in Settings. Integration tests were run against **1.0.5**.
 
 The default theme is **System**: on dark Windows the app starts dark; Settings can force Light or Dark.
 

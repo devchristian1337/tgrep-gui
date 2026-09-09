@@ -9,27 +9,32 @@ $dotnetExecutable = if (Test-Path -LiteralPath $localDotnet) { $localDotnet } el
 
 function Get-BundledTgrep {
     param([string]$Rid = 'win-x64')
+    $version = '1.0.5'
     if ($Rid -eq 'win-arm64') {
-        $toolsTgrep = Join-Path $projectDirectory '.tools\tgrep-arm64\tgrep.exe'
-        $zipUrl = 'https://github.com/microsoft/tgrep/releases/download/v1.0.4/tgrep-v1.0.4-aarch64-pc-windows-msvc.zip'
-        $expected = 'e1d1137c893edf7bd97eeaf93d95483f7d3f46f9b4c0923c5a2c2037c4125742'
+        $arch = 'aarch64'
+        $expected = 'f49b68f97810530688a8fe71282dfc384ed4ff99ffe7a8a769e43e68a7c633fe'
         $downloadDirectory = Join-Path $projectDirectory '.tools\tgrep-arm64'
-        $zipPath = Join-Path $downloadDirectory 'tgrep-windows.zip'
     }
     else {
-        $toolsTgrep = Join-Path $projectDirectory '.tools\tgrep\tgrep.exe'
         if ($TgrepPath -and (Test-Path -LiteralPath $TgrepPath)) { return (Resolve-Path -LiteralPath $TgrepPath).Path }
-        $zipUrl = 'https://github.com/microsoft/tgrep/releases/download/v1.0.4/tgrep-v1.0.4-x86_64-pc-windows-msvc.zip'
-        $expected = '9b8d5488b1c342c10f222806de84a78049e8d8e8bdd35e34a0f872560c700b56'
+        $arch = 'x86_64'
+        $expected = '5b6ba08ffddb5bc1b436c5c83b4f0c9e66c70a006b3853ed57daf51e7a75986c'
         $downloadDirectory = Join-Path $projectDirectory '.tools\tgrep'
-        $zipPath = Join-Path $downloadDirectory 'tgrep-windows.zip'
     }
-    if (Test-Path -LiteralPath $toolsTgrep) { return (Resolve-Path -LiteralPath $toolsTgrep).Path }
-    New-Item -ItemType Directory -Force $downloadDirectory | Out-Null
-    Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath
-    $actual = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($actual -ne $expected) { throw "tgrep zip hash mismatch ($Rid): $actual" }
-    Expand-Archive -LiteralPath $zipPath -DestinationPath $downloadDirectory -Force
+    $toolsTgrep = Join-Path $downloadDirectory 'tgrep.exe'
+    $zipUrl = "https://github.com/microsoft/tgrep/releases/download/v$version/tgrep-v$version-$arch-pc-windows-msvc.zip"
+    $zipPath = Join-Path $downloadDirectory 'tgrep-windows.zip'
+    $zipValid = (Test-Path -LiteralPath $zipPath) -and
+        ((Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant() -eq $expected)
+    if (-not $zipValid) {
+        New-Item -ItemType Directory -Force $downloadDirectory | Out-Null
+        Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath
+        $actual = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actual -ne $expected) { throw "tgrep zip hash mismatch ($Rid): $actual" }
+    }
+    if (-not $zipValid -or -not (Test-Path -LiteralPath $toolsTgrep)) {
+        Expand-Archive -LiteralPath $zipPath -DestinationPath $downloadDirectory -Force
+    }
     if (-not (Test-Path -LiteralPath $toolsTgrep)) { throw "tgrep.exe missing after extract ($Rid)" }
     return (Resolve-Path -LiteralPath $toolsTgrep).Path
 }
