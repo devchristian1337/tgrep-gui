@@ -105,6 +105,11 @@ try
     await File.WriteAllTextAsync(legacySettings, """{"TgrepPath":"","IndexPath":""}""");
     Check((await new SettingsStore(legacySettings).LoadAsync()).AutoUpdateEngine, "legacy settings keep automatic engine updates enabled");
     Check(EditorLauncher.SplitWindowsArguments("--goto \"$FILE:$LINE\"").SequenceEqual(new[] { "--goto", "$FILE:$LINE" }), "editor argv tokenization");
+    await using (var prepareClient = new TgrepClient())
+    {
+        await ThrowsAsync<ArgumentException>(() => prepareClient.PrepareAsync("", new(), default), "prepare requires a folder");
+        await ThrowsAsync<DirectoryNotFoundException>(() => prepareClient.PrepareAsync(Path.Combine(root, "missing-folder"), new(), default), "prepare requires an existing folder");
+    }
 
     string configuration = AppContext.BaseDirectory.Contains("Release") ? "Release" : "Debug";
     string fake = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "FakeTgrep", "bin", configuration, "net10.0", "FakeTgrep.exe"));
@@ -149,8 +154,11 @@ try
             client.StatusChanged += status => { if (status.Running) pid = status.Pid; };
             async Task Search(SearchOptions options)
             { results.Clear(); await client.SearchAsync(options, settings, m => { results.Add(m); return ValueTask.CompletedTask; }, testTimeout.Token); }
+            await client.PrepareAsync(repo, settings, testTimeout.Token);
+            Check(pid.HasValue && Alive(pid.Value), "prepare starts owned server without a search");
+            int warmed = pid!.Value;
             await Search(new(repo, "needle", "*.cs", "skip/"));
-            Check(results.Count == 2 && results.All(m => m.RelativePath == "one file.cs"), "real tgrep: first index, serve, JSON, include/exclude, ignore case");
+            Check(results.Count == 2 && results.All(m => m.RelativePath == "one file.cs") && pid == warmed, "real tgrep: first index, serve, JSON, include/exclude, ignore case");
             var hits = new List<FileHit>();
             await client.SearchHitsAsync(new(repo, "needle", "*.cs", "skip/"), settings,
                 h => { hits.Add(h); return ValueTask.CompletedTask; }, testTimeout.Token);

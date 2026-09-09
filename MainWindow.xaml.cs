@@ -35,7 +35,6 @@ public sealed partial class MainWindow : Window
         SetTitleBar(AppTitleBar);
         ApplyTitleBarTheme();
         Root.ActualThemeChanged += (_, _) => ApplyTitleBarTheme();
-        AppWindow.Resize(new Windows.Graphics.SizeInt32(1220, 850));
         string icon = Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico");
         if (File.Exists(icon)) AppWindow.SetIcon(icon);
         AppWindow.Closing += async (_, args) =>
@@ -51,10 +50,25 @@ public sealed partial class MainWindow : Window
         {
             if (initialized) return;
             initialized = true;
+            ApplyWindowSize();
             await ViewModel.InitializeAsync();
             Navigation.SelectedItem = SearchNav;
             QueryBox.Focus(FocusState.Programmatic);
         };
+    }
+
+    private void ApplyWindowSize()
+    {
+        const int width = 1500, height = 920;
+        var work = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Nearest).WorkArea;
+        int w = Math.Min(width, work.Width), h = Math.Min(height, work.Height);
+        AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(
+            work.X + (work.Width - w) / 2, work.Y + (work.Height - h) / 2, w, h));
+        if (AppWindow.Presenter is OverlappedPresenter overlapped)
+        {
+            overlapped.PreferredMinimumWidth = 960;
+            overlapped.PreferredMinimumHeight = 720;
+        }
     }
 
     public void ApplyTheme(string theme)
@@ -106,11 +120,17 @@ public sealed partial class MainWindow : Window
     }
     private async void BrowseFolder_Click(object sender, RoutedEventArgs args)
     {
-        try { if (await PickFolderAsync() is { } path) ViewModel.Folder = path; }
+        try { if (await PickFolderAsync() is { } path) ViewModel.SetFolder(path); }
         catch (Exception ex) { ViewModel.ReportError(ex); }
     }
     private void Folder_SuggestionChosen(AutoSuggestBox sender, AutoSuggestBoxSuggestionChosenEventArgs args)
-        => ViewModel.Folder = args.SelectedItem.ToString() ?? "";
+        => ViewModel.SetFolder(args.SelectedItem.ToString() ?? "");
+    private void Folder_QuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
+    {
+        if (args.ChosenSuggestion is string chosen) ViewModel.SetFolder(chosen);
+        else ViewModel.RequestPrepare();
+    }
+    private void Folder_LostFocus(object sender, RoutedEventArgs args) => ViewModel.RequestPrepare();
     private void Query_KeyDown(object sender, KeyRoutedEventArgs args)
     {
         if (args.Key == VirtualKey.Enter && ViewModel.SearchCommand.CanExecute(null))

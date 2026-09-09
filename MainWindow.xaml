@@ -22,8 +22,8 @@
     <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="LeftCompact" IsBackButtonVisible="Collapsed"
       IsPaneToggleButtonVisible="False" IsSettingsVisible="True" SelectionChanged="Navigation_SelectionChanged">
       <NavigationView.MenuItems><NavigationViewItem x:Name="SearchNav" Content="Search" Icon="Find" Tag="search" /></NavigationView.MenuItems>
-      <Grid>
-        <Grid x:Name="SearchPage" Padding="24,16,24,16" RowSpacing="12">
+      <Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+        <Grid x:Name="SearchPage" Padding="24,12,24,12" RowSpacing="8" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" />
@@ -84,7 +84,8 @@
               <Grid ColumnSpacing="12">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                 <AutoSuggestBox x:Name="FolderBox" Header="Project folder" PlaceholderText="Choose a folder to search" IsEnabled="{Binding CanEdit}"
-                  Text="{Binding Folder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ItemsSource="{Binding RecentFolders}" SuggestionChosen="Folder_SuggestionChosen" QueryIcon="Folder" />
+                  Text="{Binding Folder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ItemsSource="{Binding RecentFolders}" SuggestionChosen="Folder_SuggestionChosen"
+                  QuerySubmitted="Folder_QuerySubmitted" LostFocus="Folder_LostFocus" QueryIcon="Folder" />
                 <Button Grid.Column="1" Content="Browse…" VerticalAlignment="Bottom" MinWidth="96" Click="BrowseFolder_Click" IsEnabled="{Binding CanEdit}" />
               </Grid>
               <Expander x:Name="FiltersExpander" Grid.Row="1" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
@@ -126,10 +127,10 @@
               <CheckBox Content="Use index" IsEnabled="{Binding CanEdit}" IsChecked="{Binding UseIndex, Mode=TwoWay}" />
             </StackPanel>
           </Grid>
-          <Grid Grid.Row="4" MinHeight="100">
+          <Grid Grid.Row="4" MinHeight="280">
             <Grid.ColumnDefinitions><ColumnDefinition Width="280" MinWidth="180" /><ColumnDefinition Width="8" /><ColumnDefinition Width="*" MinWidth="240" /></Grid.ColumnDefinitions>
             <Border Style="{StaticResource Card}">
-              <Grid RowSpacing="4">
+              <Grid RowSpacing="4" Padding="0,0,0,12">
                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
                                 <Border Padding="16,12" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
                   <Grid>
@@ -137,10 +138,10 @@
                     <TextBlock Text="{Binding FileCount}" HorizontalAlignment="Right" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                   </Grid>
                 </Border>
-                <StackPanel Grid.Row="1" Margin="24" Spacing="10" VerticalAlignment="Center" Visibility="{Binding NoFiles, Converter={StaticResource BoolVisibility}}" IsHitTestVisible="False">
+                <StackPanel Grid.Row="1" Margin="16,12" Spacing="6" VerticalAlignment="Center" Visibility="{Binding NoFiles, Converter={StaticResource BoolVisibility}}" IsHitTestVisible="False">
                   <SymbolIcon Symbol="Find" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                  <TextBlock Text="Files appear here" FontWeight="SemiBold" HorizontalAlignment="Center" />
-                  <TextBlock Text="{Binding Message}" TextWrapping="Wrap" TextAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                  <TextBlock Text="Files appear here" FontWeight="SemiBold" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" />
+                  <TextBlock Text="Run a search to fill this list." TextWrapping="Wrap" TextAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
                 <ListView x:Name="FileList" Grid.Row="1" ItemsSource="{Binding Files}" SelectedItem="{Binding SelectedFile, Mode=TwoWay}" SelectionMode="Single">
                   <ListView.ItemTemplate>
@@ -168,14 +169,14 @@
             </Border>
             <toolkit:GridSplitter Grid.Column="1" Width="8" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" HorizontalAlignment="Stretch" AutomationProperties.Name="Resize result panes" />
             <Border Grid.Column="2" Style="{StaticResource Card}">
-              <Grid>
+              <Grid Padding="0,0,0,8">
                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                                 <Border Padding="16,12" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
                   <TextBlock Text="{Binding SelectedPath}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding SelectedPath}" IsTextSelectionEnabled="True" />
                 </Border>
-                <StackPanel Grid.Row="1" Margin="16" Spacing="8" VerticalAlignment="Center" HorizontalAlignment="Center"
+                <StackPanel Grid.Row="1" Margin="16,12" Spacing="6" VerticalAlignment="Center" HorizontalAlignment="Stretch"
                   Visibility="{Binding NoSelection, Converter={StaticResource BoolVisibility}}" IsHitTestVisible="False">
-                  <FontIcon Glyph="&#xE943;" FontSize="24" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                  <FontIcon Glyph="&#xE943;" FontSize="24" Foreground="{ThemeResource TextFillColorSecondaryBrush}" HorizontalAlignment="Center" />
                   <TextBlock Text="A closer look at your code" FontSize="18" FontWeight="SemiBold" TextAlignment="Center" TextWrapping="Wrap" />
                   <TextBlock Text="Select a matching file to explore its lines." TextAlignment="Center" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
@@ -193,7 +194,10 @@
                     </DataTemplate>
                   </ListView.ItemTemplate>
                 </ListView>
-                <TextBlock Grid.Row="2" Text="F3 / double-click  Open in editor     Ctrl+C  Copy selection" Margin="16,8" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <TextBlock Grid.Row="2" Margin="16,8" FontSize="11" TextWrapping="Wrap"
+                  Visibility="{Binding NoSelection, Converter={StaticResource BoolVisibility}, ConverterParameter=Invert}"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                  Text="F3 / double-click · Open in editor    Ctrl+C · Copy selection" />
               </Grid>
             </Border>
           </Grid>

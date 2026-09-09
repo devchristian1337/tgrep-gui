@@ -20,6 +20,9 @@ public sealed class MainViewModel : ObservableObject
     private readonly CancellationTokenSource shutdown = new();
     private CancellationTokenSource? engineUpdateCancellation;
     private Task engineUpdateTask = Task.CompletedTask;
+    private CancellationTokenSource? prepare;
+    private Task prepareTask = Task.CompletedTask;
+    private bool isPreparing;
     private string? sessionEngine;
     private string engineVersion = "Checking engine version…", engineUpdateStatus = "";
     private string? pendingEngineProgress;
@@ -107,9 +110,18 @@ public sealed class MainViewModel : ObservableObject
     public bool IgnoreCase { get => ignoreCase; set => SetProperty(ref ignoreCase, value); }
     public bool Literal { get => literal; set => SetProperty(ref literal, value); }
     public bool WholeWord { get => wholeWord; set => SetProperty(ref wholeWord, value); }
-    public bool UseIndex { get => useIndex; set => SetProperty(ref useIndex, value); }
+    public bool UseIndex
+    {
+        get => useIndex;
+        set
+        {
+            if (!SetProperty(ref useIndex, value)) return;
+            if (value) RequestPrepare();
+            else prepare?.Cancel();
+        }
+    }
     public bool IsReady { get => isReady; private set { SetProperty(ref isReady, value); NotifyCommands(); } }
-    public bool IsBusy { get => isBusy; private set { SetProperty(ref isBusy, value); timer.Interval = value ? TimeSpan.FromMilliseconds(100) : TimeSpan.FromSeconds(1); OnPropertyChanged(nameof(CanEdit)); NotifyCommands(); } }
+    public bool IsBusy { get => isBusy; private set { SetProperty(ref isBusy, value); timer.Interval = value || isPreparing ? TimeSpan.FromMilliseconds(100) : TimeSpan.FromSeconds(1); OnPropertyChanged(nameof(CanEdit)); NotifyCommands(); } }
     public bool CanEdit => IsReady && !IsBusy;
     public bool MissingTgrep { get => missingTgrep; set => SetProperty(ref missingTgrep, value); }
     public string Message { get => message; private set => SetProperty(ref message, value); }
@@ -196,6 +208,7 @@ public sealed class MainViewModel : ObservableObject
         IsReady = true;
         OnPropertyChanged(nameof(CanEdit));
         StartEngineUpdate();
+        RequestPrepare();
     }
 
     private void StartEngineUpdate(bool manual = false)
@@ -259,6 +272,61 @@ public sealed class MainViewModel : ObservableObject
         UpdateEngineCommand.NotifyCanExecuteChanged();
     }
 
+    public void SetFolder(string path)
+    {
+        Folder = path;
+        RequestPrepare();
+    }
+
+    public void RequestPrepare()
+    {
+        if (!IsReady || shutdown.IsCancellationRequested || !UseIndex) return;
+        _ = PrepareFolderAsync();
+    }
+
+    private async Task PrepareFolderAsync()
+    {
+        prepare?.Cancel();
+        var previous = prepare;
+        var previousTask = prepareTask;
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
+        prepare = cts;
+        var snapshot = EngineSettings;
+        string requested = Folder;
+        isPreparing = true;
+        if (!IsBusy) timer.Interval = TimeSpan.FromMilliseconds(100);
+        prepareTask = RunPrepareAsync(requested, snapshot, cts);
+        try { await previousTask; } catch { }
+        previous?.Dispose();
+        await prepareTask;
+    }
+
+    private async Task RunPrepareAsync(string requested, AppSettings snapshot, CancellationTokenSource cts)
+    {
+        var token = cts.Token;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(requested) || !Directory.Exists(requested.Trim().Trim('"'))) return;
+            await Task.Run(() => client.PrepareAsync(requested, snapshot, token), token);
+            if (!token.IsCancellationRequested && !IsBusy)
+                Message = "Index ready. Enter a query to search.";
+        }
+        catch (OperationCanceledException) { }
+        catch (TgrepMissingException ex) { MissingTgrep = true; if (!token.IsCancellationRequested) ReportWarning(ex.Message); }
+        catch (Exception ex)
+        {
+            if (!token.IsCancellationRequested) ReportWarning(ex.Message);
+        }
+        finally
+        {
+            if (ReferenceEquals(prepare, cts))
+            {
+                isPreparing = false;
+                if (!IsBusy) timer.Interval = TimeSpan.FromSeconds(1);
+            }
+        }
+    }
+
     public async Task SaveSettingsAsync(AppSettings value)
     {
         if (IsBusy) throw new InvalidOperationException("Wait for the search to finish before saving.");
@@ -282,6 +350,7 @@ public sealed class MainViewModel : ObservableObject
         IgnoreCase = value.IgnoreCase; Literal = value.Literal;
         ThemeChanged?.Invoke(value.Theme);
         await CheckTgrepAsync();
+        RequestPrepare();
     }
 
     private async Task SearchAsync()
@@ -498,7 +567,7 @@ public sealed class MainViewModel : ObservableObject
     {
         if (Interlocked.Exchange(ref pendingEngineProgress, null) is { } engineProgress && IsEngineUpdating)
             EngineUpdateStatus = engineProgress;
-        if (Interlocked.Exchange(ref pendingProgress, null) is { } progress && IsBusy) Message = progress;
+        if (Interlocked.Exchange(ref pendingProgress, null) is { } progress && (IsBusy || isPreparing)) Message = progress;
         if (Interlocked.Exchange(ref pendingStatus, null) is { } status)
         {
             Server = status.Running ? $"PID {status.Pid} · port {status.Port}"
@@ -529,6 +598,7 @@ public sealed class MainViewModel : ObservableObject
     {
         shutdown.Cancel();
         engineUpdateCancellation?.Cancel();
+        prepare?.Cancel();
         IsReady = false;
         OnPropertyChanged(nameof(CanEdit));
         lineLoad?.Cancel();
@@ -538,8 +608,10 @@ public sealed class MainViewModel : ObservableObject
         await WaitForLineLoadsAsync();
         timer.Stop();
         previews.Clear();
+        await prepareTask;
         await Task.Run(async () => await client.DisposeAsync());
         await engineUpdateTask;
         engineUpdateCancellation?.Dispose();
+        prepare?.Dispose();
     }
 }

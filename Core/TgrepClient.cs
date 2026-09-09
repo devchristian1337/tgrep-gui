@@ -48,6 +48,15 @@ public sealed class TgrepClient : IAsyncDisposable
         Func<FileHit, ValueTask> onHit, CancellationToken cancellationToken)
         => SearchCoreAsync(options, settings, null, onHit, cancellationToken);
 
+    public async Task PrepareAsync(string folder, AppSettings settings, CancellationToken cancellationToken)
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
+        folder = ValidateFolder(folder);
+        string exe = Discover(settings.TgrepPath);
+        string? index = GetIndex(settings, folder);
+        await EnsureServerAsync(folder, exe, index, linked.Token).ConfigureAwait(false);
+    }
+
     private async Task SearchCoreAsync(SearchOptions options, AppSettings settings,
         Func<SearchMatch, ValueTask>? onMatch, Func<FileHit, ValueTask>? onHit, CancellationToken cancellationToken)
     {
