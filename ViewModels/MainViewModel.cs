@@ -16,6 +16,24 @@ public sealed class MainViewModel : ObservableObject
 {
     private readonly TgrepClient client = new();
     private readonly SettingsStore store = new();
+    private readonly EngineUpdater engineUpdater = new();
+    private readonly CancellationTokenSource shutdown = new();
+    private CancellationTokenSource? engineUpdateCancellation;
+    private Task engineUpdateTask = Task.CompletedTask;
+    private string? sessionEngine;
+    private string engineVersion = "Checking engine version…", engineUpdateStatus = "";
+    private string? pendingEngineProgress;
+    private bool isEngineUpdating;
+    public string EngineVersion { get => engineVersion; private set => SetProperty(ref engineVersion, value); }
+    public string EngineUpdateStatus { get => engineUpdateStatus; private set => SetProperty(ref engineUpdateStatus, value); }
+    public bool IsEngineUpdating
+    {
+        get => isEngineUpdating;
+        private set { SetProperty(ref isEngineUpdating, value); UpdateEngineCommand?.NotifyCanExecuteChanged(); }
+    }
+    public IAsyncRelayCommand UpdateEngineCommand { get; }
+    private AppSettings EngineSettings => string.IsNullOrWhiteSpace(Settings.TgrepPath) && sessionEngine != null
+        ? Settings with { TgrepPath = sessionEngine } : Settings;
     private readonly ConcurrentQueue<TgrepLog> pendingLogs = new();
     private readonly Dictionary<string, FileResult> byPath = new(StringComparer.OrdinalIgnoreCase);
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(1) };
@@ -40,8 +58,18 @@ public sealed class MainViewModel : ObservableObject
     {
         SearchCommand = new AsyncRelayCommand(SearchAsync, () => IsReady && !IsBusy);
         RestartCommand = new AsyncRelayCommand(RestartAsync, () => IsReady && !IsBusy);
+        UpdateEngineCommand = new AsyncRelayCommand(() =>
+        {
+            StartEngineUpdate(manual: true);
+            return engineUpdateTask;
+        }, () => IsReady && !IsEngineUpdating && string.IsNullOrWhiteSpace(Settings.TgrepPath));
         CancelCommand = new RelayCommand(() => { operation?.Cancel(); lineLoad?.Cancel(); }, () => IsBusy);
         client.Log += log => { pendingLogs.Enqueue(log); while (pendingLogs.Count > 2000) pendingLogs.TryDequeue(out _); };
+        engineUpdater.Log += text =>
+        {
+            pendingLogs.Enqueue(new(DateTimeOffset.Now, "update", text));
+            Interlocked.Exchange(ref pendingEngineProgress, text);
+        };
         client.Progress += progress => Interlocked.Exchange(ref pendingProgress, progress);
         client.StatusChanged += status => Interlocked.Exchange(ref pendingStatus, status);
         timer.Tick += (_, _) => DrainUpdates();
@@ -122,6 +150,7 @@ public sealed class MainViewModel : ObservableObject
 
     private void NotifyCommands()
     {
+        UpdateEngineCommand?.NotifyCanExecuteChanged();
         SearchCommand?.NotifyCanExecuteChanged(); RestartCommand?.NotifyCanExecuteChanged(); CancelCommand?.NotifyCanExecuteChanged();
     }
 
@@ -146,15 +175,88 @@ public sealed class MainViewModel : ObservableObject
             if (prefill.TryGetValue("text", out var t)) Query = t;
         }
         catch (Exception ex) { ReportError(ex); }
+        if (string.IsNullOrWhiteSpace(Settings.TgrepPath))
+        {
+            try
+            {
+                sessionEngine = await Task.Run(async () =>
+                {
+                    Version? bundledVersion = null;
+                    try { bundledVersion = await EngineUpdater.ReadVersionAsync(TgrepClient.Discover(""), shutdown.Token); }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    { pendingLogs.Enqueue(new(DateTimeOffset.Now, "update", "Default engine version unavailable: " + ex.Message)); }
+                    return await engineUpdater.ResolveAsync(shutdown.Token, bundledVersion);
+                });
+            }
+            catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { return; }
+            catch (Exception ex) { pendingLogs.Enqueue(new(DateTimeOffset.Now, "update", "Using bundled engine: " + ex.Message)); }
+        }
+        if (shutdown.IsCancellationRequested) return;
         await CheckTgrepAsync();
         IsReady = true;
         OnPropertyChanged(nameof(CanEdit));
+        StartEngineUpdate();
+    }
+
+    private void StartEngineUpdate(bool manual = false)
+    {
+        if (IsEngineUpdating || (!manual && (!settingsReadable || !Settings.AutoUpdateEngine)) || shutdown.IsCancellationRequested) return;
+        if (!string.IsNullOrWhiteSpace(Settings.TgrepPath))
+        {
+            EngineUpdateStatus = "A custom engine path is configured. Clear it and save settings to use managed updates.";
+            return;
+        }
+        engineUpdateCancellation?.Dispose();
+        engineUpdateCancellation = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
+        engineUpdateCancellation.CancelAfter(TimeSpan.FromMinutes(2));
+        var token = engineUpdateCancellation.Token;
+        IsEngineUpdating = true;
+        EngineUpdateStatus = "Checking for tgrep updates…";
+        Interlocked.Exchange(ref pendingEngineProgress, null);
+        engineUpdateTask = RunEngineUpdateAsync(token);
+    }
+
+    private async Task RunEngineUpdateAsync(CancellationToken token)
+    {
+        string result;
+        try
+        {
+            result = await Task.Run(async () =>
+            {
+                string? active = null;
+                try { active = TgrepClient.Discover(EngineSettings.TgrepPath); } catch (TgrepMissingException) { }
+                return await engineUpdater.CheckAsync(active, token);
+            });
+        }
+        catch (OperationCanceledException) { result = "Engine update check stopped; current engine kept."; }
+        catch (Exception ex) { result = "Engine update unavailable: " + ex.Message; }
+        finally
+        {
+            Interlocked.Exchange(ref pendingEngineProgress, null);
+            IsEngineUpdating = false;
+        }
+        EngineUpdateStatus = result;
+        pendingLogs.Enqueue(new(DateTimeOffset.Now, "update", result));
     }
 
     public async Task CheckTgrepAsync()
     {
-        try { await Task.Run(() => TgrepClient.Discover(Settings.TgrepPath)); MissingTgrep = false; }
-        catch (TgrepMissingException) { MissingTgrep = true; }
+        try
+        {
+            var version = await Task.Run(async () =>
+            {
+                string executable = TgrepClient.Discover(EngineSettings.TgrepPath);
+                return await EngineUpdater.ReadVersionAsync(executable, shutdown.Token);
+            });
+            MissingTgrep = false;
+            EngineVersion = $"tgrep {version} · in use";
+        }
+        catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { return; }
+        catch (TgrepMissingException) { MissingTgrep = true; EngineVersion = "tgrep is not installed"; }
+        catch (Exception ex) { EngineVersion = "Engine version unavailable"; pendingLogs.Enqueue(new(DateTimeOffset.Now, "update", ex.Message)); }
+        if (!string.IsNullOrWhiteSpace(Settings.TgrepPath))
+            EngineUpdateStatus = "A custom engine path is configured. Clear it and save settings to use managed updates.";
+        UpdateEngineCommand.NotifyCanExecuteChanged();
     }
 
     public async Task SaveSettingsAsync(AppSettings value)
@@ -171,6 +273,12 @@ public sealed class MainViewModel : ObservableObject
         value = value with { RecentFolders = Settings.RecentFolders };
         await store.SaveAsync(value);
         Settings = value; settingsReadable = true;
+        engineUpdateCancellation?.Cancel();
+        await engineUpdateTask;
+        engineUpdateCancellation?.Dispose();
+        engineUpdateCancellation = null;
+        EngineUpdateStatus = "";
+        StartEngineUpdate();
         IgnoreCase = value.IgnoreCase; Literal = value.Literal;
         ThemeChanged?.Invoke(value.Theme);
         await CheckTgrepAsync();
@@ -187,7 +295,7 @@ public sealed class MainViewModel : ObservableObject
             { SingleReader = true, SingleWriter = true, FullMode = BoundedChannelFullMode.Wait });
         var token = operation!.Token;
         var options = new SearchOptions(Folder, Query, Include, Exclude, IgnoreCase, Literal, WholeWord, UseIndex);
-        var snapshot = Settings;
+        var snapshot = EngineSettings;
         lastSearch = options;
         lastSearchSettings = snapshot;
         Task producer = Task.Run(async () =>
@@ -356,7 +464,7 @@ public sealed class MainViewModel : ObservableObject
         try
         {
             var token = operation!.Token;
-            string root = Folder; var snapshot = Settings;
+            string root = Folder; var snapshot = EngineSettings;
             await Task.Run(() => client.RestartAsync(root, snapshot, token));
             DrainUpdates(); Message = "Server ready. Run a search to refresh the results.";
         }
@@ -388,6 +496,8 @@ public sealed class MainViewModel : ObservableObject
     }
     private void DrainUpdates()
     {
+        if (Interlocked.Exchange(ref pendingEngineProgress, null) is { } engineProgress && IsEngineUpdating)
+            EngineUpdateStatus = engineProgress;
         if (Interlocked.Exchange(ref pendingProgress, null) is { } progress && IsBusy) Message = progress;
         if (Interlocked.Exchange(ref pendingStatus, null) is { } status)
         {
@@ -417,6 +527,8 @@ public sealed class MainViewModel : ObservableObject
 
     public async Task ShutdownAsync()
     {
+        shutdown.Cancel();
+        engineUpdateCancellation?.Cancel();
         IsReady = false;
         OnPropertyChanged(nameof(CanEdit));
         lineLoad?.Cancel();
@@ -427,5 +539,7 @@ public sealed class MainViewModel : ObservableObject
         timer.Stop();
         previews.Clear();
         await Task.Run(async () => await client.DisposeAsync());
+        await engineUpdateTask;
+        engineUpdateCancellation?.Dispose();
     }
 }

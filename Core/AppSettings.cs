@@ -5,6 +5,7 @@ namespace TgrepGui.Core;
 public sealed record AppSettings
 {
     public string TgrepPath { get; init; } = "";
+    public bool AutoUpdateEngine { get; init; } = true;
     public string IndexPath { get; init; } = "";
     public string EditorPath { get; init; } = "";
     public string EditorArguments { get; init; } = "\"$FILE\"";

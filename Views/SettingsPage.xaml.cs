@@ -11,8 +11,10 @@ public sealed partial class SettingsPage : Page
     public SettingsPage(MainViewModel model, MainWindow window)
     {
         InitializeComponent(); this.model = model; this.window = window;
+        DataContext = model;
         var settings = model.Settings;
         TgrepPathBox.Text = settings.TgrepPath; IndexPathBox.Text = settings.IndexPath;
+        AutoUpdateEngineBox.IsChecked = settings.AutoUpdateEngine;
         EditorPathBox.Text = settings.EditorPath; EditorArgsBox.Text = settings.EditorArguments;
         IgnoreCaseBox.IsChecked = settings.IgnoreCase; LiteralBox.IsChecked = settings.Literal;
         ThemeBox.SelectedIndex = settings.Theme switch { "Light" => 1, "Dark" => 2, _ => 0 };
@@ -34,6 +36,7 @@ public sealed partial class SettingsPage : Page
             await model.SaveSettingsAsync(model.Settings with
             {
                 TgrepPath = TgrepPathBox.Text.Trim().Trim('"'), IndexPath = IndexPathBox.Text.Trim().Trim('"'),
+                AutoUpdateEngine = AutoUpdateEngineBox.IsChecked == true,
                 EditorPath = EditorPathBox.Text.Trim().Trim('"'), EditorArguments = EditorArgsBox.Text,
                 Theme = ((ComboBoxItem)ThemeBox.SelectedItem).Tag.ToString()!,
                 IgnoreCase = IgnoreCaseBox.IsChecked == true, Literal = LiteralBox.IsChecked == true

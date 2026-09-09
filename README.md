@@ -14,6 +14,14 @@ Windows desktop GUI for [Microsoft tgrep](https://github.com/microsoft/tgrep), w
 
 The EXE is self-contained: .NET, Windows App SDK, and Microsoft tgrep 1.0.4 are bundled. The first launch extracts them to a temporary folder. Windows 10 64-bit (build 17763) or later is required. No installer, certificate, or Developer Mode is needed.
 
+The GUI automatically checks official Microsoft tgrep releases in the background at startup. A newer stable Windows engine is downloaded for the app architecture, checked against GitHub's SHA-256 digest, and tested with temporary files (search, JSON previews, index/server startup, and index upgrade/fallback). A successful update is used **after restarting the app**. Searches in the current session keep their selected engine. Check **Log** for update results.
+
+Settings shows the actual **tgrep version in use** and an **Update tgrep** button. The button checks and installs a compatible release even when automatic updates are disabled. Progress and the result appear directly below it; an installed update awaiting restart is shown separately from the engine still in use. The button is disabled during an update or when a manual engine path is configured.
+
+Updates are stored separately under `%LocalAppData%\tgrep-gui\engines`. The previous verified engine and bundled engine remain available as fallbacks. Startup rechecks cached executable integrity and compatibility locally; an unavailable network does not prevent searching. Disable **Automatically update tgrep** in Settings to stop checks/downloads; an already installed verified engine remains usable. A manually configured `tgrep.exe path` takes precedence and disables automatic checks. No project paths, queries, or file contents are sent to GitHub.
+
+Compatibility checks cover the protocol used by this GUI, not every possible future behavior of tgrep. An incompatible release is not activated and may require a GUI update. Existing external servers are never stopped by the updater.
+
 ## Prerequisites
 
 These apply when you build from source. The Release zip does not require the .NET SDK.
@@ -134,6 +142,7 @@ The file is created on first launch at `%AppData%\tgrep-gui\settings.json` and w
 ```json
 {
   "TgrepPath": "",
+  "AutoUpdateEngine": true,
   "IndexPath": "",
   "EditorPath": "",
   "EditorArguments": "\"$FILE\"",
@@ -144,7 +153,7 @@ The file is created on first launch at `%AppData%\tgrep-gui\settings.json` and w
 }
 ```
 
-The engine is resolved in this order: a valid configured path, the app folder, then PATH. A custom index path must be **absolute and dedicated to a single folder**. An empty field lets every command use `<folder>\.tgrep`. Environment variables in paths are supported. Executable/index changes apply to the next operation.
+The engine is resolved in this order: a valid configured path, a verified downloaded engine selected at startup, the bundled/app folder engine, then PATH. Cached versions older than the default engine are skipped. A custom index path must be **absolute and dedicated to a single folder**. An empty field lets every command use `<folder>\.tgrep`. Environment variables in paths are supported. Manual executable/index changes apply to the next operation; automatic updates apply after restarting the app.
 
 To open at the exact line, set the editor `.exe` path:
 

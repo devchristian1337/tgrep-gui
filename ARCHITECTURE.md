@@ -29,6 +29,10 @@ GUI CLI options (`--folder/-f`, `--include-files/-i`, `--exclude-files/-e`, `--t
 
 ## Serve lifecycle
 
+`EngineUpdater` checks the stable GitHub release API in a background task, using the process architecture (x64/ARM64). A configured engine path bypasses updates. A verified cached engine is selected once at startup and copied into search/settings snapshots, so background installation cannot switch a listing or preview to another executable. Startup verifies its local SHA-256 and runs the compatibility probe, falling back to the previous cached engine and then normal discovery. A newer bundled engine wins over older cached engines.
+
+Installation is serialized with an exclusive file lock and uses bounded downloads, an exact official release URL, GitHub's SHA-256 archive digest, and extraction of only the root `tgrep.exe` entry. A temporary fixture exercises actual `TgrepClient` listing, previews, Unicode highlights, flags, no-match handling, index creation and server readiness. A second fixture exercises old-engine → new-engine → old-engine reuse of an index. The updater never opens project indexes. Processes are bounded by cancellation/timeouts and disposed before fixture cleanup. Immutable version/hash directories preserve old executables; only the small current/previous manifest is replaced atomically after success. Interrupted downloads and failed probes do not activate the candidate. Unsupported architectures, offline access, rate limits and other update errors are recorded in Log while searches continue. Shutdown and settings changes cancel and await background update work.
+
 ```mermaid
 flowchart TD
     A[Search] --> B{Use index?}

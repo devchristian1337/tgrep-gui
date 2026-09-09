@@ -4,6 +4,8 @@ using System.Text.Json;
 using TgrepGui.Core;
 
 if (args is ["--performance"]) { await Performance.RunAsync(); return; }
+if (args is ["--engine-update", var engineDirectory]) { await EngineUpdaterTests.LiveAsync(engineDirectory); return; }
+if (args is ["--engine-update", var updateTestDirectory, var baseline]) { await EngineUpdaterTests.LiveAsync(updateTestDirectory, baseline); return; }
 int passed = 0;
 void Check(bool condition, string name)
 {
@@ -25,6 +27,7 @@ Directory.CreateDirectory(root);
 try
 {
     await PerformanceTests.RunAsync(Check);
+    await EngineUpdaterTests.RunAsync(root, Check);
     var globs = Arguments.SplitGlobs("*.cs;*.xaml,*.{js,ts} \"my files/**\" [a,;].txt");
     Check(globs.SequenceEqual(new[] { "*.cs", "*.xaml", "*.{js,ts}", "my files/**", "[a,;].txt" }), "glob separators, braces, quotes and classes");
     var opts = new SearchOptions(root, "-serve", "*.cs;*.xaml", "bin/;*.min.js", true, true, true, false);
@@ -96,7 +99,11 @@ try
     }
     var settingsStore = new SettingsStore(Path.Combine(root, "settings.json"));
     await settingsStore.SaveAsync(new() { EditorArguments = "--goto \"$FILE:$LINE\"", RecentFolders = [root] });
-    Check((await settingsStore.LoadAsync()).RecentFolders.Single() == root, "settings round trip and atomic replacement");
+    var loadedSettings = await settingsStore.LoadAsync();
+    Check(loadedSettings.RecentFolders.Single() == root && loadedSettings.AutoUpdateEngine, "settings round trip and atomic replacement");
+    string legacySettings = Path.Combine(root, "legacy-settings.json");
+    await File.WriteAllTextAsync(legacySettings, """{"TgrepPath":"","IndexPath":""}""");
+    Check((await new SettingsStore(legacySettings).LoadAsync()).AutoUpdateEngine, "legacy settings keep automatic engine updates enabled");
     Check(EditorLauncher.SplitWindowsArguments("--goto \"$FILE:$LINE\"").SequenceEqual(new[] { "--goto", "$FILE:$LINE" }), "editor argv tokenization");
 
     string configuration = AppContext.BaseDirectory.Contains("Release") ? "Release" : "Debug";
