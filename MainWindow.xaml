@@ -22,7 +22,7 @@
     <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="LeftCompact" IsBackButtonVisible="Collapsed"
       IsPaneToggleButtonVisible="False" IsSettingsVisible="True" SelectionChanged="Navigation_SelectionChanged">
       <NavigationView.MenuItems><NavigationViewItem x:Name="SearchNav" Content="Search" Icon="Find" Tag="search" /></NavigationView.MenuItems>
-      <Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+      <Grid x:Name="ScaleHost" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
         <Grid x:Name="SearchPage" Padding="24,12,24,12" RowSpacing="8" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
@@ -31,7 +31,7 @@
           <Grid ColumnSpacing="16">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
             <StackPanel Spacing="3">
-              <TextBlock Text="Code search" FontSize="28" FontWeight="SemiBold" />
+              <TextBlock Text="Code search" FontSize="{Binding TitleFontSize}" FontWeight="SemiBold" />
               <TextBlock Text="Find a match. Get straight to the code." Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             </StackPanel>
             <CommandBar Grid.Column="1" Background="Transparent" DefaultLabelPosition="Right" VerticalAlignment="Center" IsOpen="False">
@@ -64,7 +64,7 @@
                         <ListView.ItemContainerStyle>
                           <Style TargetType="ListViewItem"><Setter Property="HorizontalContentAlignment" Value="Stretch" /></Style>
                         </ListView.ItemContainerStyle>
-                        <ListView.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="12" IsTextSelectionEnabled="True" TextWrapping="Wrap" /></DataTemplate></ListView.ItemTemplate>
+                        <ListView.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="{Binding DataContext.BodyFontSize, ElementName=Root}" IsTextSelectionEnabled="True" TextWrapping="Wrap" /></DataTemplate></ListView.ItemTemplate>
                       </ListView>
                     </Grid>
                   </Flyout>
@@ -92,7 +92,7 @@
                 IsExpanded="{Binding FiltersExpanded, Mode=TwoWay}" AutomationProperties.Name="File filters">
                 <Expander.Header>
                   <StackPanel Orientation="Horizontal" Spacing="12">
-                    <FontIcon Glyph="&#xE71C;" FontSize="14" />
+                    <FontIcon Glyph="&#xE71C;" FontSize="{Binding IconFontSize}" />
                     <TextBlock Text="File filters" FontWeight="SemiBold" />
                     <TextBlock Text="{Binding FilterSummary}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                   </StackPanel>
@@ -113,12 +113,12 @@
             </Grid>
             <Grid Grid.Row="1" ColumnSpacing="8">
               <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-              <TextBox x:Name="QueryBox" PlaceholderText="Text or regular expression" FontSize="16" MinHeight="44" VerticalContentAlignment="Center"
+              <TextBox x:Name="QueryBox" PlaceholderText="Text or regular expression" FontSize="{Binding QueryFontSize}" MinHeight="{Binding QueryMinHeight}" VerticalContentAlignment="Center"
                 Text="{Binding Query, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" KeyDown="Query_KeyDown" AutomationProperties.Name="Search text" />
-              <Button x:Name="SearchButton" Grid.Column="1" AutomationProperties.Name="Search" Style="{StaticResource AccentButtonStyle}" Command="{Binding SearchCommand}" MinWidth="112" Height="44">
+              <Button x:Name="SearchButton" Grid.Column="1" AutomationProperties.Name="Search" Style="{StaticResource AccentButtonStyle}" Command="{Binding SearchCommand}" MinWidth="112" Height="{Binding QueryMinHeight}">
                 <StackPanel Orientation="Horizontal" Spacing="8"><SymbolIcon Symbol="Find" /><TextBlock Text="Search" /></StackPanel>
               </Button>
-              <Button Grid.Column="2" Content="Cancel" Command="{Binding CancelCommand}" Height="44" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}" />
+              <Button Grid.Column="2" Content="Cancel" Command="{Binding CancelCommand}" Height="{Binding QueryMinHeight}" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}" />
             </Grid>
             <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="16">
               <CheckBox Content="Ignore case" IsEnabled="{Binding CanEdit}" IsChecked="{Binding IgnoreCase, Mode=TwoWay}" />
@@ -157,9 +157,9 @@
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                         <StackPanel Spacing="3">
                           <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                          <TextBlock Text="{Binding RelativePath}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding FullPath}" />
+                          <TextBlock Text="{Binding RelativePath}" FontSize="{Binding DataContext.BodyFontSize, ElementName=Root}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding FullPath}" />
                         </StackPanel>
-                        <Border Grid.Column="1" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="10" Padding="8,2" VerticalAlignment="Center"><TextBlock Text="{Binding Count}" FontSize="12" /></Border>
+                        <Border Grid.Column="1" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="10" Padding="8,2" VerticalAlignment="Center"><TextBlock Text="{Binding Count}" FontSize="{Binding DataContext.BodyFontSize, ElementName=Root}" /></Border>
                       </Grid>
                     </DataTemplate>
                   </ListView.ItemTemplate>
@@ -172,12 +172,12 @@
               <Grid Padding="0,0,0,8">
                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                                 <Border Padding="16,12" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
-                  <TextBlock Text="{Binding SelectedPath}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding SelectedPath}" IsTextSelectionEnabled="True" />
+                  <TextBlock Text="{Binding SelectedPath}" FontSize="{Binding PathFontSize}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding SelectedPath}" IsTextSelectionEnabled="True" />
                 </Border>
                 <StackPanel Grid.Row="1" Margin="16,12" Spacing="6" VerticalAlignment="Center" HorizontalAlignment="Stretch"
                   Visibility="{Binding NoSelection, Converter={StaticResource BoolVisibility}}" IsHitTestVisible="False">
-                  <FontIcon Glyph="&#xE943;" FontSize="24" Foreground="{ThemeResource TextFillColorSecondaryBrush}" HorizontalAlignment="Center" />
-                  <TextBlock Text="A closer look at your code" FontSize="18" FontWeight="SemiBold" TextAlignment="Center" TextWrapping="Wrap" />
+                  <FontIcon Glyph="&#xE943;" FontSize="{Binding EmptyIconFontSize}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" HorizontalAlignment="Center" />
+                  <TextBlock Text="A closer look at your code" FontSize="{Binding SubtitleFontSize}" FontWeight="SemiBold" TextAlignment="Center" TextWrapping="Wrap" />
                   <TextBlock Text="Select a matching file to explore its lines." TextAlignment="Center" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
                 <ListView x:Name="MatchList" Grid.Row="1" ItemsSource="{Binding SelectedFile.Lines}" SelectionMode="Extended"
@@ -188,13 +188,13 @@
                     <DataTemplate>
                       <Grid ColumnSpacing="16" Padding="0,4">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="60" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                        <TextBlock Text="{Binding LineNumber}" FontFamily="Consolas" FontSize="13" HorizontalAlignment="Right" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <controls:MatchText Grid.Column="1" Match="{Binding}" />
+                        <TextBlock Text="{Binding LineNumber}" FontFamily="Consolas" FontSize="{Binding DataContext.CodeFontSize, ElementName=Root}" HorizontalAlignment="Right" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <controls:MatchText Grid.Column="1" Match="{Binding}" FontSize="{Binding DataContext.CodeFontSize, ElementName=Root}" />
                       </Grid>
                     </DataTemplate>
                   </ListView.ItemTemplate>
                 </ListView>
-                <TextBlock Grid.Row="2" Margin="16,8" FontSize="11" TextWrapping="Wrap"
+                <TextBlock Grid.Row="2" Margin="16,8" FontSize="{Binding CaptionFontSize}" TextWrapping="Wrap"
                   Visibility="{Binding NoSelection, Converter={StaticResource BoolVisibility}, ConverterParameter=Invert}"
                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                   Text="F3 / double-click · Open in editor    Ctrl+C · Copy selection" />
@@ -205,11 +205,11 @@
             <ProgressBar IsIndeterminate="True" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}" Height="2" />
             <TextBlock Text="{Binding Message}" AutomationProperties.LiveSetting="Polite" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding Message}" />
             <StackPanel Orientation="Horizontal" Spacing="20">
-              <TextBlock Text="{Binding Server}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-              <TextBlock FontSize="12"><Run Text="Indexed: " /><Run Text="{Binding IndexedFiles}" /></TextBlock>
-              <TextBlock FontSize="12"><Run Text="Matches: " /><Run Text="{Binding MatchCount}" /></TextBlock>
-              <TextBlock Text="{Binding Elapsed}" FontSize="12" />
-              <TextBlock FontSize="12"><Run Text="Warnings: " /><Run Text="{Binding WarningCount}" /></TextBlock>
+              <TextBlock Text="{Binding Server}" FontSize="{Binding BodyFontSize}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+              <TextBlock FontSize="{Binding BodyFontSize}"><Run Text="Indexed: " /><Run Text="{Binding IndexedFiles}" /></TextBlock>
+              <TextBlock FontSize="{Binding BodyFontSize}"><Run Text="Matches: " /><Run Text="{Binding MatchCount}" /></TextBlock>
+              <TextBlock Text="{Binding Elapsed}" FontSize="{Binding BodyFontSize}" />
+              <TextBlock FontSize="{Binding BodyFontSize}"><Run Text="Warnings: " /><Run Text="{Binding WarningCount}" /></TextBlock>
             </StackPanel>
           </StackPanel>
         </Grid>

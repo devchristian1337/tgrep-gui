@@ -50,6 +50,36 @@ public sealed class MainViewModel : ObservableObject
     private bool settingsReadable = true;
     public AppSettings Settings { get; private set; } = new();
     public event Action<string>? ThemeChanged;
+    private double uiScale = 1.0;
+    public double UiScale
+    {
+        get => uiScale;
+        set
+        {
+            value = AppSettings.NormalizeUiScale(value);
+            if (!SetProperty(ref uiScale, value)) return;
+            OnPropertyChanged(nameof(TitleFontSize));
+            OnPropertyChanged(nameof(SubtitleFontSize));
+            OnPropertyChanged(nameof(QueryFontSize));
+            OnPropertyChanged(nameof(QueryMinHeight));
+            OnPropertyChanged(nameof(PathFontSize));
+            OnPropertyChanged(nameof(BodyFontSize));
+            OnPropertyChanged(nameof(CodeFontSize));
+            OnPropertyChanged(nameof(CaptionFontSize));
+            OnPropertyChanged(nameof(IconFontSize));
+            OnPropertyChanged(nameof(EmptyIconFontSize));
+        }
+    }
+    public double TitleFontSize => 28 * UiScale;
+    public double SubtitleFontSize => 18 * UiScale;
+    public double QueryFontSize => 16 * UiScale;
+    public double QueryMinHeight => 44 * UiScale;
+    public double PathFontSize => 14 * UiScale;
+    public double BodyFontSize => 12 * UiScale;
+    public double CodeFontSize => 13 * UiScale;
+    public double CaptionFontSize => 11 * UiScale;
+    public double IconFontSize => 14 * UiScale;
+    public double EmptyIconFontSize => 24 * UiScale;
     public ObservableCollection<FileResult> Files { get; } = [];
     public ObservableCollection<string> RecentFolders { get; } = [];
     public ObservableCollection<string> Logs { get; } = [];
@@ -178,6 +208,7 @@ public sealed class MainViewModel : ObservableObject
         Folder = RecentFolders.FirstOrDefault() ?? "";
         IgnoreCase = Settings.IgnoreCase; Literal = Settings.Literal;
         ThemeChanged?.Invoke(Settings.Theme);
+        UiScale = Settings.UiScale;
         try
         {
             var prefill = Arguments.ParsePrefill(Environment.GetCommandLineArgs().Skip(1).ToArray());
@@ -349,6 +380,7 @@ public sealed class MainViewModel : ObservableObject
         StartEngineUpdate();
         IgnoreCase = value.IgnoreCase; Literal = value.Literal;
         ThemeChanged?.Invoke(value.Theme);
+        UiScale = value.UiScale;
         await CheckTgrepAsync();
         RequestPrepare();
     }

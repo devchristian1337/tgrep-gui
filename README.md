@@ -33,7 +33,7 @@ These apply when you build from source. The Release zip does not require the .NE
 - Windows Developer Mode for MSIX development/distribution. The default **unpackaged** executable does not require an MSIX identity, certificates, or Developer Mode.
 - [tgrep for Windows](https://github.com/microsoft/tgrep/releases): download `tgrep-v*-x86_64-pc-windows-msvc.zip`, or `tgrep-v*-aarch64-pc-windows-msvc.zip` on ARM64. Extract the package and select `tgrep.exe` in Settings. Integration tests were run against **1.0.5**.
 
-The default theme is **System**: on dark Windows the app starts dark; Settings can force Light or Dark.
+The default theme is **System**: on dark Windows the app starts dark; Settings can force Light or Dark. **Interface size** in Settings scales the text from 75% to 150%.
 
 ## Build and run
 
@@ -147,6 +147,7 @@ The file is created on first launch at `%AppData%\tgrep-gui\settings.json` and w
   "EditorPath": "",
   "EditorArguments": "\"$FILE\"",
   "Theme": "System",
+  "UiScale": 1.0,
   "IgnoreCase": true,
   "Literal": false,
   "RecentFolders": []

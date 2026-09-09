@@ -104,6 +104,13 @@ try
     string legacySettings = Path.Combine(root, "legacy-settings.json");
     await File.WriteAllTextAsync(legacySettings, """{"TgrepPath":"","IndexPath":""}""");
     Check((await new SettingsStore(legacySettings).LoadAsync()).AutoUpdateEngine, "legacy settings keep automatic engine updates enabled");
+    Check((await new SettingsStore(legacySettings).LoadAsync()).UiScale == 1.0, "legacy settings keep default interface scale");
+    var scaledSettings = Path.Combine(root, "scaled-settings.json");
+    await new SettingsStore(scaledSettings).SaveAsync(new() { UiScale = 1.25 });
+    Check((await new SettingsStore(scaledSettings).LoadAsync()).UiScale == 1.25, "settings persist interface scale");
+    Check(AppSettings.NormalizeUiScale(0) == 1.0 && AppSettings.NormalizeUiScale(2) == 1.0
+        && AppSettings.NormalizeUiScale(double.NaN) == 1.0
+        && AppSettings.NormalizeUiScale(double.PositiveInfinity) == 1.0, "invalid interface scale defaults to 100%");
     Check(EditorLauncher.SplitWindowsArguments("--goto \"$FILE:$LINE\"").SequenceEqual(new[] { "--goto", "$FILE:$LINE" }), "editor argv tokenization");
     await using (var prepareClient = new TgrepClient())
     {

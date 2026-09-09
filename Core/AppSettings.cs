@@ -10,9 +10,17 @@ public sealed record AppSettings
     public string EditorPath { get; init; } = "";
     public string EditorArguments { get; init; } = "\"$FILE\"";
     public string Theme { get; init; } = "System";
+    public double UiScale { get; init; } = 1.0;
     public bool IgnoreCase { get; init; } = true;
     public bool Literal { get; init; }
     public List<string> RecentFolders { get; init; } = [];
+
+    public static double NormalizeUiScale(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value) || value < 0.75 || value > 1.50)
+            return 1.0;
+        return Math.Round(value * 20, MidpointRounding.AwayFromZero) / 20.0;
+    }
 }
 
 public sealed class SettingsStore(string? filePath = null)
@@ -33,6 +41,7 @@ public sealed class SettingsStore(string? filePath = null)
             TgrepPath = value.TgrepPath ?? "", IndexPath = value.IndexPath ?? "",
             EditorPath = value.EditorPath ?? "", EditorArguments = value.EditorArguments ?? "\"$FILE\"",
             Theme = value.Theme is "Light" or "Dark" ? value.Theme : "System",
+            UiScale = AppSettings.NormalizeUiScale(value.UiScale),
             RecentFolders = (value.RecentFolders ?? []).Where(x => !string.IsNullOrWhiteSpace(x)).Take(12).ToList()
         };
     }

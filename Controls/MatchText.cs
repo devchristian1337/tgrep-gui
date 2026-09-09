@@ -17,6 +17,11 @@ public sealed class MatchText : ContentControl
     public MatchText()
     {
         ActualThemeChanged += (_, _) => { if (Match is { } match) Render(this, match); };
+        RegisterPropertyChangedCallback(FontSizeProperty, (d, _) =>
+        {
+            var control = (MatchText)d;
+            if (control.Content is RichTextBlock block) block.FontSize = control.FontSize;
+        });
     }
 
     public SearchMatch? Match { get => (SearchMatch?)GetValue(MatchProperty); set => SetValue(MatchProperty, value); }
@@ -37,8 +42,9 @@ public sealed class MatchText : ContentControl
     {
         var block = control.Content as RichTextBlock ?? new RichTextBlock
         {
-            IsTextSelectionEnabled = true, FontFamily = CodeFont, FontSize = 13, TextWrapping = TextWrapping.NoWrap
+            IsTextSelectionEnabled = true, FontFamily = CodeFont, TextWrapping = TextWrapping.NoWrap
         };
+        block.FontSize = control.FontSize;
         block.Blocks.Clear();
         block.TextHighlighters.Clear();
         var paragraph = new Paragraph();
