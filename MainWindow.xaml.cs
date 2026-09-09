@@ -153,6 +153,21 @@ public sealed partial class MainWindow : Window
         OpenSelected();
     }
     private void OpenSelected_Click(object sender, RoutedEventArgs args) => OpenSelected();
+    private void CopySelectedPath_Click(object sender, RoutedEventArgs args)
+    {
+        if (ViewModel.SelectedFile is { } file) Copy(file.FullPath);
+    }
+    private void ResultList_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
+        if (args.InRecycleQueue) return;
+        // Native item styles set their own font size. Bind each realized container
+        // to its list so existing and recycled rows follow interface-scale changes.
+        args.ItemContainer.SetBinding(Control.FontSizeProperty, new Microsoft.UI.Xaml.Data.Binding
+        {
+            Source = sender, Path = new PropertyPath(nameof(Control.FontSize)),
+            Mode = Microsoft.UI.Xaml.Data.BindingMode.OneWay
+        });
+    }
     private void OpenSelected()
     {
         if (MatchList.SelectedItem is SearchMatch match) Open(match.FullPath, match.LineNumber);

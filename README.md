@@ -121,7 +121,9 @@ The profile produces an **unsigned** package in `artifacts\msix`. To install it 
 | F3 or double-click a line | Open in the editor at that line |
 | Ctrl+C in the lines pane | Copy selected lines with path and line number |
 
-A file context menu offers Open, Open containing folder, and Copy path. The **Log** pane shows the last 1,000 diagnostic lines; **Copy log** copies them to the clipboard. The app does not write logs to disk.
+A file context menu offers Open, Open containing folder, and Copy path. The preview header also provides **Open** and **Copy file path** actions. **Filters** beside the search options shows or hides the include/exclude fields. The file list displays each file's name and directory separately.
+
+The **Log** pane shows the last 1,000 diagnostic lines; **Copy log** copies them to the clipboard. The app does not write logs to disk.
 
 ### Search, index, and branch changes
 

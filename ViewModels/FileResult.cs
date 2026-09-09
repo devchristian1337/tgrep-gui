@@ -11,6 +11,8 @@ public sealed class FileResult(string fullPath, string relativePath) : Observabl
     public string FullPath { get; } = fullPath;
     public string RelativePath { get; } = relativePath;
     public string Name => Path.GetFileName(FullPath);
+    public string DirectoryLabel { get; } = Path.GetDirectoryName(relativePath) is { Length: > 0 } directory
+        ? directory : "Project root";
     public ObservableCollection<SearchMatch> Lines { get; } = new MatchCollection();
     private int count;
     public int Count => count;

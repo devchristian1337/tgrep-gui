@@ -3,7 +3,7 @@
  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
  IgnorableNamespaces="uap rescap">
-  <Identity Name="TgrepGui" Publisher="CN=TgrepGui" Version="1.0.10.0" />
+  <Identity Name="TgrepGui" Publisher="CN=TgrepGui" Version="1.0.11.0" />
   <Properties><DisplayName>tgrep-gui</DisplayName><PublisherDisplayName>tgrep-gui</PublisherDisplayName><Logo>Assets\StoreLogo.png</Logo></Properties>
   <Dependencies><TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" /></Dependencies>
   <Resources><Resource Language="en-us" /></Resources>
