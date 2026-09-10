@@ -1,6 +1,0 @@
-{
-  "profiles": {
-    "tgrep-gui (Unpackaged)": { "commandName": "Project" },
-    "tgrep-gui (MSIX)": { "commandName": "MsixPackage" }
-  }
-}

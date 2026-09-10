@@ -1,0 +1,27 @@
+[package]
+name = "tgrep-gui"
+version = "2.0.0"
+edition = "2021"
+description = "A customizable desktop workbench for Microsoft tgrep"
+license = "MIT"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["process", "io-util", "sync", "time", "macros", "rt-multi-thread"] }
+tokio-util = "0.7"
+base64 = "0.22"
+open = "5"
+shell-words = "1"
+tempfile = "3"
+dunce = "1"
+
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1

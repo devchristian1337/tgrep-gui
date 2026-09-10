@@ -1,21 +1,17 @@
 * text=auto
 
-*.cs text diff=csharp
-*.xaml text
-*.csproj text
-*.props text
-*.targets text
+*.rs text diff=rust
+*.ts text
+*.tsx text
+*.js text
+*.css text
 *.json text
+*.toml text
 *.md text
 *.ps1 text
-*.xml text
-*.manifest text
-*.config text
-*.pubxml text
-*.gitignore text
-*.gitattributes text
+*.html text
 
 *.png binary
-*.jpg binary
-*.jpeg binary
 *.ico binary
+*.woff binary
+*.woff2 binary

@@ -1,0 +1,67 @@
+/* Hallmark · macrostructure: application workbench · tone: modern-minimal · anchor hue: cobalt */
+/* Hallmark · pre-emit critique: P4 H4 E4 S4 R5 V4 */
+:root {
+  --font-display: "Space Grotesk", sans-serif;
+  --font-body: "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  --color-paper: oklch(98.5% 0.003 256);
+  --color-surface: oklch(100% 0.001 256);
+  --color-sidebar: oklch(96.6% 0.006 256);
+  --color-hover: oklch(94% 0.008 256);
+  --color-rule: oklch(88% 0.012 256);
+  --color-control-rule: oklch(70% 0.015 256);
+  --color-ink: oklch(24% 0.018 256);
+  --color-muted: oklch(49% 0.018 256);
+  --accent-hue: 256;
+  --color-accent: oklch(49% 0.19 var(--accent-hue));
+  --color-accent-ink: oklch(99% 0.002 256);
+  --color-selection: oklch(95% 0.024 var(--accent-hue));
+  --color-highlight: oklch(88% 0.08 var(--accent-hue));
+  --color-danger: oklch(44% 0.17 25);
+  --color-danger-bg: oklch(97% 0.012 25);
+  --color-success: oklch(46% 0.12 160);
+  --color-overlay: oklch(15% 0.015 256 / 0.45);
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --ui-scale: 1;
+  --text-sm: 0.78rem;
+  --text-xs: 0.69rem;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-short: 100ms;
+}
+[data-accent="jade"] {
+  --accent-hue: 165;
+  --color-accent: oklch(44% 0.115 165);
+}
+[data-accent="amber"] {
+  --accent-hue: 65;
+  --color-accent: oklch(45% 0.115 65);
+}
+[data-accent="rose"] {
+  --accent-hue: 15;
+  --color-accent: oklch(47% 0.18 15);
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+  --color-paper: oklch(18% 0.012 256);
+  --color-surface: oklch(20% 0.012 256);
+  --color-sidebar: oklch(16% 0.012 256);
+  --color-hover: oklch(26% 0.015 256);
+  --color-rule: oklch(32% 0.014 256);
+  --color-control-rule: oklch(52% 0.014 256);
+  --color-ink: oklch(94% 0.007 256);
+  --color-muted: oklch(72% 0.012 256);
+  --color-accent: oklch(73% 0.14 var(--accent-hue));
+  --color-accent-ink: oklch(17% 0.02 256);
+  --color-selection: oklch(27% 0.035 var(--accent-hue));
+  --color-highlight: oklch(38% 0.09 var(--accent-hue));
+  --color-danger: oklch(80% 0.11 25);
+  --color-danger-bg: oklch(24% 0.025 25);
+  --color-success: oklch(73% 0.12 160);
+}
