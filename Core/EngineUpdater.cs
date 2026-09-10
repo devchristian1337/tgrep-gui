@@ -87,16 +87,35 @@ public sealed class EngineUpdater
             {
                 var currentVersion = activeExecutable is null ? new Version(0, 0, 0)
                     : await readVersion(activeExecutable, token).ConfigureAwait(false);
-                using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/repos/microsoft/tgrep/releases/latest");
-                request.Headers.UserAgent.ParseAdd("tgrep-gui/1.0");
-                request.Headers.Accept.ParseAdd("application/vnd.github+json");
-                using var response = await web.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
-                response.EnsureSuccessStatusCode();
-                await using var metadataStream = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
-                using var metadata = new MemoryStream();
-                await CopyBoundedAsync(metadataStream, metadata, 1024 * 1024, token).ConfigureAwait(false);
-                var release = ParseRelease(metadata.ToArray(), architecture);
-                if (release.Version <= currentVersion) return $"tgrep {currentVersion} is up to date.";
+                Release? release = null;
+                Version? latestWithoutWindows = null;
+                // Una tag senza lo zip richiesto non interrompe la ricerca, anche fra pagine diverse.
+                for (int page = 1; ; page++)
+                {
+                    using var request = new HttpRequestMessage(HttpMethod.Get,
+                        $"https://api.github.com/repos/microsoft/tgrep/releases?per_page=30&page={page}");
+                    request.Headers.UserAgent.ParseAdd("tgrep-gui/1.0");
+                    request.Headers.Accept.ParseAdd("application/vnd.github+json");
+                    using var response = await web.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
+                    response.EnsureSuccessStatusCode();
+                    await using var metadataStream = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
+                    using var metadata = new MemoryStream();
+                    await CopyBoundedAsync(metadataStream, metadata, 4 * 1024 * 1024, token).ConfigureAwait(false);
+                    var selection = SelectRelease(metadata.ToArray(), architecture, currentVersion);
+                    if (selection.Candidate != null && (release == null || selection.Candidate.Version > release.Version))
+                        release = selection.Candidate;
+                    if (selection.LatestWithoutWindows != null && (latestWithoutWindows == null || selection.LatestWithoutWindows > latestWithoutWindows))
+                        latestWithoutWindows = selection.LatestWithoutWindows;
+                    if (selection.Count < 30) break;
+                }
+                if (release == null)
+                {
+                    string status = activeExecutable == null
+                        ? $"No Windows engine is available for {architecture}."
+                        : $"No newer Windows engine is available for {architecture}; keeping tgrep {currentVersion}.";
+                    return latestWithoutWindows == null ? status
+                        : status + $" tgrep {latestWithoutWindows} has no Windows package for this architecture.";
+                }
                 var pending = (await ReadStateAsync(token).ConfigureAwait(false)).Current;
                 if (pending != null && Version.Parse(pending.Version) >= release.Version
                     && File.Exists(Executable(pending))
@@ -190,6 +209,33 @@ public sealed class EngineUpdater
             || asset.GetProperty("size").GetInt64() is <= 0 or > MaxArchive)
             throw new InvalidDataException("Release URL, size or SHA-256 digest is invalid.");
         return new(version!, expectedUrl, digest[7..]);
+    }
+
+    internal sealed record Selection(Release? Candidate, Version? LatestWithoutWindows, int Count);
+
+    internal static Selection SelectRelease(byte[] metadata, string arch, Version currentVersion)
+    {
+        if (arch is not ("x86_64" or "aarch64")) throw new InvalidDataException("Unsupported architecture.");
+        using var json = JsonDocument.Parse(metadata);
+        Release? candidate = null;
+        Version? latestWithoutWindows = null;
+        foreach (var release in json.RootElement.EnumerateArray())
+        {
+            string tag = release.GetProperty("tag_name").GetString() ?? "";
+            if (release.GetProperty("draft").GetBoolean() || release.GetProperty("prerelease").GetBoolean()
+                || !tag.StartsWith('v') || !TryVersion(tag[1..], out var version) || version <= currentVersion)
+                continue;
+            string name = $"tgrep-{tag}-{arch}-pc-windows-msvc.zip";
+            if (!release.GetProperty("assets").EnumerateArray().Any(a => a.GetProperty("name").GetString() == name))
+            {
+                if (latestWithoutWindows == null || version > latestWithoutWindows) latestWithoutWindows = version;
+                continue;
+            }
+            // Mantiene i controlli di integrità esistenti per gli asset presenti.
+            var parsed = ParseRelease(System.Text.Encoding.UTF8.GetBytes(release.GetRawText()), arch);
+            if (candidate == null || parsed.Version > candidate.Version) candidate = parsed;
+        }
+        return new(candidate, latestWithoutWindows, json.RootElement.GetArrayLength());
     }
 
     private static bool TryVersion(string? value, out Version? version)

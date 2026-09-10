@@ -13,6 +13,7 @@ internal static class EngineUpdaterTests
         public string Arch = "x86_64";
         public bool BadHash, Offline, Prerelease, MaliciousUrl, MissingDigest, WrongEntry;
         public int Downloads;
+        public string[]? FeedPages;
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
@@ -21,18 +22,39 @@ internal static class EngineUpdaterTests
             string digest = BadHash ? new string('0', 64) : Convert.ToHexStringLower(SHA256.HashData(zip));
             if (request.RequestUri!.Host == "api.github.com")
             {
+                if (request.RequestUri.AbsolutePath != "/repos/microsoft/tgrep/releases")
+                    throw new InvalidOperationException("Expected the releases list endpoint.");
+                if (FeedPages != null)
+                {
+                    int page = int.Parse(request.RequestUri.Query.Split("&page=")[1]);
+                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                    { Content = new StringContent(FeedPages[page - 1]) });
+                }
                 string name = $"tgrep-v{Version}-{Arch}-pc-windows-msvc.zip";
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new[] { new
                 {
                     tag_name = "v" + Version, draft = false, prerelease = Prerelease,
                     assets = new[] { new { name, digest = MissingDigest ? null : "sha256:" + digest, size = zip.Length,
                         browser_download_url = MaliciousUrl ? "https://example.com/evil.exe"
                             : $"https://github.com/microsoft/tgrep/releases/download/v{Version}/{name}" } }
-                })) });
+                } })) });
             }
             Downloads++;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zip) });
         }
+    }
+
+    private static object ReleaseMetadata(string version, string arch = "x86_64", bool windows = true,
+        bool prerelease = false, bool draft = false)
+    {
+        string name = $"tgrep-v{version}-{arch}-pc-windows-msvc.zip";
+        byte[] zip = Zip(version, "tgrep.exe");
+        return new
+        {
+            tag_name = "v" + version, draft, prerelease,
+            assets = windows ? new[] { new { name, digest = "sha256:" + Convert.ToHexStringLower(SHA256.HashData(zip)),
+                size = zip.Length, browser_download_url = $"https://github.com/microsoft/tgrep/releases/download/v{version}/{name}" } } : []
+        };
     }
 
     private static byte[] Zip(string text, string entry)
@@ -75,9 +97,37 @@ internal static class EngineUpdaterTests
             "repeated manual update reports pending restart without downloading again");
         string manifestPath = Path.Combine(directory, "x86_64", "installed.json");
         string manifest = File.ReadAllText(manifestPath);
-        check((await updater.CheckAsync(first, default)).Contains("up to date") && server.Downloads == 1, "same version is not downloaded again");
+        check((await updater.CheckAsync(first, default)).Contains("No newer Windows engine") && server.Downloads == 1, "same version is not downloaded again");
         server.Version = "1.0.4";
-        check((await updater.CheckAsync(first, default)).Contains("up to date") && server.Downloads == 1, "older release never downgrades active engine");
+        check((await updater.CheckAsync(first, default)).Contains("No newer Windows engine") && server.Downloads == 1, "older release never downgrades active engine");
+        foreach (string arch in new[] { "x86_64", "aarch64" })
+        {
+            byte[] feed = JsonSerializer.SerializeToUtf8Bytes(new[] { ReleaseMetadata("1.0.6", windows: false), ReleaseMetadata("1.0.5", arch) });
+            var selection = EngineUpdater.SelectRelease(feed, arch, new Version(1, 0, 5));
+            check(selection.Candidate == null && selection.LatestWithoutWindows == new Version(1, 0, 6),
+                "release without Windows leaves 1.0.5 current: " + arch);
+            feed = JsonSerializer.SerializeToUtf8Bytes(new[] { ReleaseMetadata("1.0.8", windows: false),
+                ReleaseMetadata("1.0.5", arch), ReleaseMetadata("1.0.9", arch, prerelease: true),
+                ReleaseMetadata("1.0.10", arch, draft: true), ReleaseMetadata("1.0.7", arch),
+                ReleaseMetadata("1.0.11", arch == "x86_64" ? "aarch64" : "x86_64") });
+            check(EngineUpdater.SelectRelease(feed, arch, new Version(1, 0, 5)).Candidate?.Version == new Version(1, 0, 7),
+                "selector finds newest stable Windows asset for current architecture: " + arch);
+        }
+        server.FeedPages = [JsonSerializer.Serialize(new[] { ReleaseMetadata("1.0.6", windows: false), ReleaseMetadata("1.0.5") })];
+        result = await updater.CheckAsync(first, default);
+        check(result.Contains("No newer Windows engine") && result.Contains("keeping tgrep 1.0.5")
+            && result.Contains("1.0.6 has no Windows package") && !result.Contains("unavailable")
+            && server.Downloads == 1 && File.ReadAllText(manifestPath) == manifest,
+            "missing latest Windows asset is informational and preserves active engine");
+        server.Version = "1.0.7";
+        server.FeedPages = [JsonSerializer.Serialize(Enumerable.Repeat(ReleaseMetadata("1.0.8", windows: false), 30)),
+            JsonSerializer.Serialize(new[] { ReleaseMetadata("1.0.7"), ReleaseMetadata("1.0.5") })];
+        var paged = new EngineUpdater(Path.Combine(root, "paged"), http, Probe, "x86_64",
+            (_, _) => Task.FromResult(new Version(1, 0, 5)), (_, _, _) => Task.CompletedTask);
+        result = await paged.CheckAsync(first, default);
+        check(result.Contains("1.0.7 verified and ready") && result.Contains("Restart the app")
+            && File.ReadAllText(first!) == "1.0.5", "Windows update on next page is verified and staged for restart");
+        server.FeedPages = null;
         server.Version = "1.0.6";
         server.BadHash = true;
         int before = probes;
@@ -96,7 +146,11 @@ internal static class EngineUpdaterTests
         check((await updater.CheckAsync(first, default)).Contains("keeping the current engine")
             && await updater.ResolveAsync(default) == first, "offline startup keeps cached engine available");
         server.Offline = false;
-        foreach (string failure in new[] { "prerelease", "url", "digest", "entry" })
+        server.Prerelease = true;
+        before = probes;
+        check((await updater.CheckAsync(first, default)).Contains("No newer Windows engine") && probes == before,
+            "prerelease is skipped without an update error");
+        foreach (string failure in new[] { "url", "digest", "entry" })
         {
             server.Prerelease = failure == "prerelease"; server.MaliciousUrl = failure == "url";
             server.MissingDigest = failure == "digest"; server.WrongEntry = failure == "entry";
