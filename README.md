@@ -1,6 +1,7 @@
 # tgrep-gui
 
-<img width="1920" height="1440" alt="900shots_so" src="https://github.com/user-attachments/assets/d95e0985-ccce-4c04-88e5-e5a591e99da6" />
+<img width="3840" height="2160" alt="image" src="https://github.com/user-attachments/assets/c8c60730-ef79-4d78-877a-0e1b47aec904" />
+
 
 <br>
 
