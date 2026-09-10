@@ -438,6 +438,7 @@ export default function App() {
                   disabled={busy}
                   onChange={(e) => opt("folder", e.target.value)}
                   spellCheck={false}
+                  autoComplete="off"
                 />
                 <datalist id="recent-folders">
                   {settings.recentFolders.map((f) => (

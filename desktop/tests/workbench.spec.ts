@@ -110,6 +110,21 @@ async function mockDesktop(page: Page) {
     };
   });
 }
+test("folder field focus rings the shell instead of the inner input", async ({
+  page,
+}) => {
+  await mockDesktop(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  const folder = page.getByLabel("Project folder");
+  await folder.fill("C:\\Users\\Christian\\Documents\\Blackmagic Design");
+  await folder.click();
+  await expect(folder).toHaveCSS("outline-style", "none");
+  await expect(folder).toHaveCSS("box-shadow", "none");
+  const shell = page.locator(".project-control");
+  await expect(shell).not.toHaveCSS("box-shadow", "none");
+  await page.screenshot({ path: "test-results/workbench-folder-focus.png" });
+});
 test("browser preview is honest and validates input", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("Interface preview ·")).toBeVisible();
