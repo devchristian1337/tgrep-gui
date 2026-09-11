@@ -9,10 +9,10 @@ import {
   Square,
   RotateCw,
   X,
-  Copy,
   ChevronRight,
-  Check,
   AlertCircle,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { api, native } from "./api";
 import { applyAccent } from "./appearance";
@@ -30,9 +30,40 @@ import {
 import Settings from "./Settings";
 import { FileList, CodePreview } from "./Results";
 import { formatShortcut, matches } from "./shortcuts";
+import SettingsSidebarAccordion from "@/components/ui/settings-sidebar-accordion";
+import WindowControls from "./WindowControls";
+import AppContextMenu from "@/components/app-context-menu";
+import { Tooltip } from "@/components/ui/beui-tooltip";
+import { CopyButton } from "@/components/ui/copy-button";
 
 export default function App() {
   const [page, setPage] = useState<"search" | "settings">("search");
+  const [settingsSection, setSettingsSection] = useState("appearance");
+  const openSettingsSection = (section: string) => {
+    setPage("settings");
+    setSettingsSection(section);
+    requestAnimationFrame(() => {
+      const target = document.getElementById(`settings-${section}`);
+      target?.scrollIntoView({ block: "start" });
+      target?.focus({ preventScroll: true });
+    });
+  };
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("tgrep-sidebar-collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+  const toggleSidebar = () => {
+    const collapsed = !sidebarCollapsed;
+    setSidebarCollapsed(collapsed);
+    try {
+      localStorage.setItem("tgrep-sidebar-collapsed", String(collapsed));
+    } catch {
+      // The toggle still works when persistent storage is unavailable.
+    }
+  };
   const [settings, setSettings] = useState<Preferences>(defaults);
   const [ready, setReady] = useState(false);
   const settingsReadable = useRef(true);
@@ -62,8 +93,35 @@ export default function App() {
   };
   const query = useRef<HTMLInputElement>(null);
   const logDialog = useRef<HTMLDialogElement>(null);
+  /* Modal open / close (transitions.dev #06). showModal() paints the closed
+     state, so .is-open has to land a frame later for the scale-up to run;
+     closing keeps the dialog in the top layer for --modal-close-dur so the
+     scale-down is not cut off. Every exit - the X, the cancel shortcut,
+     Escape - goes through closeLogs, and it is safe to call twice. */
+  const openLogs = () => {
+    const el = logDialog.current;
+    if (!el || el.open) return;
+    el.classList.remove("is-closing");
+    el.showModal();
+    requestAnimationFrame(() => el.classList.add("is-open"));
+  };
+  const closeLogs = () => {
+    const el = logDialog.current;
+    if (!el || !el.open || el.classList.contains("is-closing")) return;
+    el.classList.remove("is-open");
+    el.classList.add("is-closing");
+    const ms =
+      parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue(
+          "--modal-close-dur",
+        ),
+      ) || 150;
+    setTimeout(() => {
+      el.classList.remove("is-closing");
+      el.close();
+    }, ms);
+  };
   const [logs, setLogs] = useState<string[]>([]);
-  const [logCopied, setLogCopied] = useState(false);
   const [split, setSplit] = useState(31);
   const results = useRef<HTMLDivElement>(null);
   const opt = <K extends keyof SearchOptions>(
@@ -201,7 +259,7 @@ export default function App() {
       if (matches(sc.cancel, e)) {
         if (logDialog.current?.open) {
           e.preventDefault();
-          logDialog.current.close();
+          closeLogs();
         } else if (running.current) {
           e.preventDefault();
           void api.cancel().catch((err) => setError(String(err)));
@@ -345,7 +403,7 @@ export default function App() {
   const showLogs = async () => {
     try {
       setLogs(await api.logs());
-      logDialog.current?.showModal();
+      openLogs();
     } catch (e) {
       setError(String(e));
     }
@@ -377,404 +435,508 @@ export default function App() {
     }));
   };
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <a
-          className="brand"
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            setPage("search");
-          }}
-          aria-label="tgrep home"
-        >
-          <span className="brand-symbol">
-            t<span>›</span>
+    <AppContextMenu
+      className="desktop-frame"
+      previewPath={selected}
+      canOpen={native && !busy}
+      onError={setError}
+      onOpen={(path, line, folder) =>
+        void api.open(path, line, settings, folder).catch((e) => {
+          setError(String(e));
+        })
+      }
+    >
+      {native && (
+        <header className="titlebar" data-tauri-drag-region>
+          <span className="titlebar-title" data-tauri-drag-region>
+            tgrep Studio
           </span>
-          <span>
-            tgrep<small>STUDIO</small>
-          </span>
-        </a>
-        <div className="nav-caption eyebrow">WORKSPACE</div>
-        <nav aria-label="Main navigation">
-          <button
-            className={page === "search" ? "active" : ""}
-            onClick={() => setPage("search")}
-          >
-            <Search size={18} />
-            Search<span className="nav-key">⌕</span>
-          </button>
-          <button
-            className={page === "settings" ? "active" : ""}
-            onClick={() => setPage("settings")}
-          >
-            <Settings2 size={18} />
-            Settings
-          </button>
-        </nav>
-        <div className="recent-projects">
-          <span className="eyebrow">RECENT PROJECTS</span>
-          {settings.recentFolders.length ? (
-            settings.recentFolders.slice(0, 6).map((f) => (
-              <button
-                key={f}
-                disabled={busy}
-                title={f}
-                onClick={() => {
-                  opt("folder", f);
-                  setPage("search");
-                }}
-              >
-                <FolderOpen size={14} />
-                <span>{f.split(/[\\/]/).filter(Boolean).pop()}</span>
-              </button>
-            ))
-          ) : (
-            <p>
-              Your projects will
-              <br />
-              feel at home here.
-            </p>
-          )}
-        </div>
-        <div className="sidebar-bottom">
-          <button onClick={() => void showLogs()}>
-            <Terminal size={17} />
-            Engine log
-          </button>
-          <span className="engine-label">
-            <span
-              className={`status-dot ${version === "Engine unavailable" ? "unavailable" : ""}`}
-            />
-            {version}
-          </span>
-        </div>
-      </aside>
-      <main>
-        <header className="topbar">
-          <span>
-            Workspace <ChevronRight size={14} />
-            <strong>{page === "search" ? "Search" : "Settings"}</strong>
-          </span>
-          <button
-            className="shortcut"
-            onClick={() => {
-              setPage("search");
-              setTimeout(() => query.current?.focus(), 0);
-            }}
-          >
-            Quick search{" "}
-            <kbd>{formatShortcut(settings.shortcuts.focusSearch)}</kbd>
-          </button>
+          <div className="titlebar-drag-space" data-tauri-drag-region />
+          <WindowControls onError={setError} />
         </header>
-        {error && (
-          <div className="error-banner" role="alert">
-            <AlertCircle size={17} />
-            <span>{error}</span>
-            <button
-              className="icon-button"
-              aria-label="Dismiss error"
-              onClick={() => setError("")}
-            >
-              <X size={15} />
-            </button>
-          </div>
-        )}
-        {!native && (
-          <div className="preview-notice">
-            Interface preview · Local search is available in the desktop app.
-          </div>
-        )}
-        {page === "settings" ? (
-          <Settings
-            value={settings}
-            onSave={save}
-            busy={busy}
-            version={version}
-            updateStatus={engineUpdate}
-            restartRequired={restartRequired}
-            onUpdateResult={receiveEngineUpdate}
-            onUpdateStatus={setEngineUpdate}
-          />
-        ) : (
-          <div className="search-view">
-            <header className="search-heading">
-              <div>
-                <span className="eyebrow">PROJECT SEARCH</span>
-                <h1>Find your next line.</h1>
-                <p>Search across your code. Stay in your flow.</p>
-              </div>
-              <span className="local-label">Local files. Local search.</span>
-            </header>
-            <form
-              onSubmit={(e) => {
+      )}
+      <div
+        className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}`}
+      >
+        <div
+          className="sidebar-track"
+          inert={sidebarCollapsed}
+          aria-hidden={sidebarCollapsed}
+        >
+          <aside className="sidebar" id="workspace-sidebar">
+            <a
+              className="brand"
+              href="#"
+              onClick={(e) => {
                 e.preventDefault();
-                void start();
+                setPage("search");
               }}
-              className="search-form"
+              aria-label="tgrep home"
             >
-              <label htmlFor="folder" className="field-label">
-                Project folder
-              </label>
-              <div className="project-control">
-                <FolderOpen size={18} />
-                <input
-                  id="folder"
-                  list="recent-folders"
-                  placeholder="Choose a project directory…"
-                  value={options.folder}
-                  disabled={busy}
-                  onChange={(e) => opt("folder", e.target.value)}
-                  spellCheck={false}
-                  autoComplete="off"
-                />
-                <datalist id="recent-folders">
-                  {settings.recentFolders.map((f) => (
-                    <option key={f} value={f} />
-                  ))}
-                </datalist>
-                <button
-                  type="button"
-                  disabled={busy || !native}
-                  onClick={() => void browse()}
-                >
-                  Browse <span>…</span>
-                </button>
-              </div>
-              <div className="query-row">
-                <div className="query-control">
-                  <Search size={21} />
-                  <input
-                    ref={query}
-                    aria-label="Search pattern"
-                    placeholder="What are you looking for?"
-                    value={options.pattern}
-                    disabled={busy}
-                    onChange={(e) => opt("pattern", e.target.value)}
-                    spellCheck={false}
-                  />
-                  <kbd>↵</kbd>
-                </div>
-                {busy ? (
-                  <button
-                    type="button"
-                    className="cancel-button"
-                    onClick={() =>
-                      void api.cancel().catch((e) => setError(String(e)))
-                    }
-                  >
-                    <Square size={14} />
-                    Cancel
-                  </button>
-                ) : (
-                  <button
-                    className="primary search-button"
-                    type="submit"
-                    disabled={!ready}
-                  >
-                    Search <ArrowRight size={17} />
-                  </button>
-                )}
-              </div>
-              <div className="options-row">
-                <div className="options">
-                  {(
-                    ["ignoreCase", "literal", "wholeWord", "useIndex"] as const
-                  ).map((key) => (
-                    <label key={key}>
-                      <input
-                        type="checkbox"
-                        checked={options[key]}
-                        disabled={busy}
-                        onChange={(e) => opt(key, e.target.checked)}
-                      />
+              <span className="brand-symbol">
+                t<span>›</span>
+              </span>
+              <span>
+                tgrep<small>STUDIO</small>
+              </span>
+            </a>
+            <div className="nav-caption eyebrow">WORKSPACE</div>
+            <nav aria-label="Main navigation">
+              <button
+                className={page === "search" ? "active" : ""}
+                onClick={() => setPage("search")}
+              >
+                <Search size={18} />
+                Search
+              </button>
+              <SettingsSidebarAccordion
+                heading=""
+                defaultValue={["settings"]}
+                active={page === "settings" ? settingsSection : undefined}
+                items={[
+                  {
+                    icon: Settings2,
+                    label: "Settings",
+                    value: "settings",
+                    onSelect: () => setPage("settings"),
+                    links: [
                       {
-                        {
-                          ignoreCase: "Ignore case",
-                          literal: "Literal text",
-                          wholeWord: "Whole word",
-                          useIndex: "Use index",
-                        }[key]
-                      }
-                    </label>
-                  ))}
-                </div>
+                        label: "Appearance",
+                        value: "appearance",
+                        onSelect: () => openSettingsSection("appearance"),
+                      },
+                      {
+                        label: "Search engine",
+                        value: "engine",
+                        onSelect: () => openSettingsSection("engine"),
+                      },
+                      {
+                        label: "Shortcuts",
+                        value: "shortcuts",
+                        onSelect: () => openSettingsSection("shortcuts"),
+                      },
+                    ],
+                  },
+                ]}
+              />
+            </nav>
+            <div className="recent-projects">
+              <span className="eyebrow">RECENT PROJECTS</span>
+              {settings.recentFolders.length ? (
+                settings.recentFolders.slice(0, 6).map((f) => (
+                  <button
+                    key={f}
+                    disabled={busy}
+                    title={f}
+                    onClick={() => {
+                      opt("folder", f);
+                      setPage("search");
+                    }}
+                  >
+                    <FolderOpen size={14} />
+                    <span>{f.split(/[\\/]/).filter(Boolean).pop()}</span>
+                  </button>
+                ))
+              ) : (
+                <p>
+                  Your projects will
+                  <br />
+                  feel at home here.
+                </p>
+              )}
+            </div>
+            <div className="sidebar-bottom">
+              <button onClick={() => void showLogs()}>
+                <Terminal size={17} />
+                Engine log
+              </button>
+              <span className="engine-label">
+                <span
+                  className={`status-dot ${version === "Engine unavailable" ? "unavailable" : ""}`}
+                />
+                {version}
+              </span>
+            </div>
+          </aside>
+        </div>
+        <main>
+          <header className="topbar">
+            <span>
+              <Tooltip
+                content={
+                  sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
+                }
+                side="bottom"
+              >
                 <button
-                  type="button"
-                  className={`filter-button ${filters ? "selected" : ""}`}
-                  aria-expanded={filters}
-                  onClick={() => setFilters((f) => !f)}
+                  className="icon-button sidebar-toggle"
+                  aria-label={
+                    sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
+                  }
+                  aria-expanded={!sidebarCollapsed}
+                  aria-controls="workspace-sidebar"
+                  onClick={toggleSidebar}
                 >
-                  <SlidersHorizontal size={15} />
-                  Filters
-                  {(options.include || options.exclude) && (
-                    <span className="filter-dot" />
+                  {sidebarCollapsed ? (
+                    <PanelLeftOpen size={18} />
+                  ) : (
+                    <PanelLeftClose size={18} />
                   )}
                 </button>
-              </div>
-              {filters && (
-                <div className="filter-fields">
-                  <label>
-                    Include files
-                    <input
-                      placeholder="*.rs; *.{ts,tsx}"
-                      value={options.include}
-                      disabled={busy}
-                      onChange={(e) => opt("include", e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Exclude files
-                    <input
-                      placeholder="target/; node_modules/"
-                      value={options.exclude}
-                      disabled={busy}
-                      onChange={(e) => opt("exclude", e.target.value)}
-                    />
-                  </label>
-                </div>
-              )}
-            </form>
-            <div className="results-toolbar">
-              <span role="status">
-                {busy ? (
-                  <span className="working">{message}</span>
-                ) : outcome ? (
-                  <>
-                    <strong>{outcome.matches.toLocaleString()}</strong> matches
-                    in <strong>{outcome.files.toLocaleString()}</strong> files{" "}
-                    <span className="quiet">
-                      ·{" "}
-                      {outcome.elapsedMs < 1000
-                        ? `${outcome.elapsedMs} ms`
-                        : `${(outcome.elapsedMs / 1000).toFixed(2)} s`}
-                    </span>
-                  </>
-                ) : (
-                  <span className="quiet">
-                    Your results, without the noise.
-                  </span>
-                )}
-              </span>
-              <button
-                className="icon-button"
-                title="Restart server started by this app"
-                aria-label="Restart server"
-                disabled={busy || !native}
-                onClick={() => void restart()}
-              >
-                <RotateCw size={15} />
-              </button>
-            </div>
-            <div
-              className="results"
-              ref={results}
-              style={{
-                gridTemplateColumns: `minmax(180px, ${split}%) 5px minmax(0, 1fr)`,
+              </Tooltip>
+              <span className="workspace-label">Workspace</span>{" "}
+              <ChevronRight size={14} />
+              <strong>{page === "search" ? "Search" : "Settings"}</strong>
+            </span>
+            <button
+              className="shortcut"
+              onClick={() => {
+                setPage("search");
+                setTimeout(() => query.current?.focus(), 0);
               }}
             >
-              <FileList
-                hits={hits}
-                selected={selected}
-                onSelect={(p) => void select(p)}
-                busy={busy}
-                dense={settings.density === "compact"}
-                shortcuts={settings.shortcuts}
-              />
+              Quick search{" "}
+              <kbd>{formatShortcut(settings.shortcuts.focusSearch)}</kbd>
+            </button>
+          </header>
+          {error && (
+            <div className="error-banner" role="alert">
+              <AlertCircle size={17} />
+              <span>{error}</span>
+              <button
+                className="icon-button"
+                aria-label="Dismiss error"
+                onClick={() => setError("")}
+              >
+                <X size={15} />
+              </button>
+            </div>
+          )}
+          {!native && (
+            <div className="preview-notice">
+              Interface preview · Local search is available in the desktop app.
+            </div>
+          )}
+          {page === "settings" ? (
+            <Settings
+              value={settings}
+              onSave={save}
+              busy={busy}
+              version={version}
+              updateStatus={engineUpdate}
+              restartRequired={restartRequired}
+              onUpdateResult={receiveEngineUpdate}
+              onUpdateStatus={setEngineUpdate}
+            />
+          ) : (
+            <div className="search-view">
+              <header className="search-heading">
+                <div>
+                  <span className="eyebrow">PROJECT SEARCH</span>
+                  <h1>Find your next line.</h1>
+                  <p>Search across your code. Stay in your flow.</p>
+                </div>
+                <span className="local-label">Local files. Local search.</span>
+              </header>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void start();
+                }}
+                className="search-form"
+              >
+                <label htmlFor="folder" className="field-label">
+                  Project folder
+                </label>
+                <div className="project-control">
+                  <FolderOpen size={18} />
+                  <input
+                    id="folder"
+                    list="recent-folders"
+                    placeholder="Choose a project directory…"
+                    value={options.folder}
+                    disabled={busy}
+                    onChange={(e) => opt("folder", e.target.value)}
+                    spellCheck={false}
+                    autoComplete="off"
+                  />
+                  <datalist id="recent-folders">
+                    {settings.recentFolders.map((f) => (
+                      <option key={f} value={f} />
+                    ))}
+                  </datalist>
+                  <button
+                    type="button"
+                    disabled={busy || !native}
+                    onClick={() => void browse()}
+                  >
+                    Browse <span>…</span>
+                  </button>
+                </div>
+                <div className="query-row">
+                  <div className="query-control">
+                    <Search size={21} />
+                    <input
+                      ref={query}
+                      aria-label="Search pattern"
+                      placeholder="What are you looking for?"
+                      value={options.pattern}
+                      disabled={busy}
+                      onChange={(e) => opt("pattern", e.target.value)}
+                      spellCheck={false}
+                    />
+                    <kbd>↵</kbd>
+                  </div>
+                  {busy ? (
+                    <button
+                      type="button"
+                      className="cancel-button"
+                      onClick={() =>
+                        void api.cancel().catch((e) => setError(String(e)))
+                      }
+                    >
+                      <Square size={14} />
+                      Cancel
+                    </button>
+                  ) : (
+                    <button
+                      className="primary search-button"
+                      type="submit"
+                      disabled={!ready}
+                    >
+                      Search <ArrowRight size={17} />
+                    </button>
+                  )}
+                </div>
+                <div className="options-row">
+                  <div className="options">
+                    {(
+                      [
+                        "ignoreCase",
+                        "literal",
+                        "wholeWord",
+                        "useIndex",
+                      ] as const
+                    ).map((key) => (
+                      <label key={key}>
+                        <input
+                          type="checkbox"
+                          checked={options[key]}
+                          disabled={busy}
+                          onChange={(e) => opt(key, e.target.checked)}
+                        />
+                        {
+                          {
+                            ignoreCase: "Ignore case",
+                            literal: "Literal text",
+                            wholeWord: "Whole word",
+                            useIndex: "Use index",
+                          }[key]
+                        }
+                      </label>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className={`filter-button ${filters ? "selected" : ""}`}
+                    aria-expanded={filters}
+                    aria-controls="filter-fields"
+                    onClick={() => setFilters((f) => !f)}
+                  >
+                    <SlidersHorizontal size={15} />
+                    Filters
+                    {(options.include || options.exclude) && (
+                      <span className="filter-dot" />
+                    )}
+                  </button>
+                </div>
+                <div
+                  className="filter-disclosure t-acc"
+                  data-open={filters ? "true" : "false"}
+                >
+                  <div className="t-acc-panel">
+                    <div
+                      className="t-acc-panel-inner"
+                      inert={!filters}
+                      aria-hidden={!filters}
+                    >
+                      <div id="filter-fields" className="filter-fields">
+                        <label>
+                          Include files
+                          <input
+                            placeholder="*.rs; *.{ts,tsx}"
+                            value={options.include}
+                            disabled={busy}
+                            onChange={(e) => opt("include", e.target.value)}
+                          />
+                        </label>
+                        <label>
+                          Exclude files
+                          <input
+                            placeholder="target/; node_modules/"
+                            value={options.exclude}
+                            disabled={busy}
+                            onChange={(e) => opt("exclude", e.target.value)}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </form>
+              <div className="results-toolbar">
+                <span role="status">
+                  {busy ? (
+                    <span className="working">{message}</span>
+                  ) : outcome ? (
+                    <>
+                      <strong>{outcome.matches.toLocaleString()}</strong>{" "}
+                      matches in{" "}
+                      <strong>{outcome.files.toLocaleString()}</strong> files{" "}
+                      <span className="quiet">
+                        ·{" "}
+                        {outcome.elapsedMs < 1000
+                          ? `${outcome.elapsedMs} ms`
+                          : `${(outcome.elapsedMs / 1000).toFixed(2)} s`}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="quiet">
+                      Your results, without the noise.
+                    </span>
+                  )}
+                </span>
+                <Tooltip
+                  content="Restart server started by this app"
+                  side="left"
+                >
+                  <button
+                    className="icon-button"
+                    aria-label="Restart server"
+                    disabled={busy || !native}
+                    onClick={() => void restart()}
+                  >
+                    <RotateCw size={15} />
+                  </button>
+                </Tooltip>
+              </div>
               <div
-                className="splitter"
-                role="separator"
-                aria-label="Resize result panels"
-                aria-orientation="vertical"
-                aria-valuemin={20}
-                aria-valuemax={65}
-                aria-valuenow={split}
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-                    e.preventDefault();
-                    setSplit((s) =>
-                      Math.max(
-                        20,
-                        Math.min(65, s + (e.key === "ArrowLeft" ? -2 : 2)),
-                      ),
-                    );
-                  }
+                className="results"
+                ref={results}
+                style={{
+                  gridTemplateColumns: `minmax(180px, ${split}%) 5px minmax(0, 1fr)`,
                 }}
-                onPointerDown={(e) => {
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                }}
-                onPointerMove={(e) => {
-                  if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                    const r = results.current?.getBoundingClientRect();
-                    if (r)
-                      setSplit(
+              >
+                <FileList
+                  hits={hits}
+                  selected={selected}
+                  onSelect={(p) => void select(p)}
+                  busy={busy}
+                  dense={settings.density === "compact"}
+                  shortcuts={settings.shortcuts}
+                />
+                <div
+                  className="splitter"
+                  role="separator"
+                  aria-label="Resize result panels"
+                  aria-orientation="vertical"
+                  aria-valuemin={20}
+                  aria-valuemax={65}
+                  aria-valuenow={split}
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                      e.preventDefault();
+                      setSplit((s) =>
                         Math.max(
                           20,
-                          Math.min(65, ((e.clientX - r.left) / r.width) * 100),
+                          Math.min(65, s + (e.key === "ArrowLeft" ? -2 : 2)),
                         ),
                       );
+                    }
+                  }}
+                  onPointerDown={(e) => {
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  }}
+                  onPointerMove={(e) => {
+                    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                      const r = results.current?.getBoundingClientRect();
+                      if (r)
+                        setSplit(
+                          Math.max(
+                            20,
+                            Math.min(
+                              65,
+                              ((e.clientX - r.left) / r.width) * 100,
+                            ),
+                          ),
+                        );
+                    }
+                  }}
+                  onPointerUp={(e) =>
+                    e.currentTarget.releasePointerCapture(e.pointerId)
                   }
-                }}
-                onPointerUp={(e) =>
-                  e.currentTarget.releasePointerCapture(e.pointerId)
-                }
-              />
-              <CodePreview
-                key={selected}
-                hit={hits.find((h) => h.path === selected)}
-                preview={preview}
-                loading={previewLoading}
-                error={previewError}
-                onOpen={(l) => void open(l)}
-                onFolder={() => void open(1, true)}
-                onCopy={copy}
-                shortcuts={settings.shortcuts}
-              />
+                />
+                <CodePreview
+                  key={selected}
+                  hit={hits.find((h) => h.path === selected)}
+                  preview={preview}
+                  loading={previewLoading}
+                  error={previewError}
+                  onOpen={(l) => void open(l)}
+                  onFolder={() => void open(1, true)}
+                  onCopy={copy}
+                  shortcuts={settings.shortcuts}
+                />
+              </div>
             </div>
+          )}
+          <footer className="statusbar">
+            <span>
+              <span className={`status-dot ${busy ? "working-dot" : ""}`} />
+              {message}
+            </span>
+            <span>
+              {options.useIndex ? "Indexed search" : "Direct scan"}
+              <span className="status-divider">/</span>tgrep Studio
+            </span>
+          </footer>
+        </main>
+        <dialog
+          ref={logDialog}
+          className="log-dialog t-modal"
+          onCancel={(e) => {
+            e.preventDefault();
+            closeLogs();
+          }}
+        >
+          <div className="panel-title">
+            <span>
+              <Terminal size={17} />
+              Engine log
+            </span>
+            <button
+              className="icon-button"
+              aria-label="Close log"
+              onClick={closeLogs}
+            >
+              <X size={18} />
+            </button>
           </div>
-        )}
-        <footer className="statusbar">
-          <span>
-            <span className={`status-dot ${busy ? "working-dot" : ""}`} />
-            {message}
-          </span>
-          <span>
-            {options.useIndex ? "Indexed search" : "Direct scan"}
-            <span className="status-divider">/</span>tgrep Studio
-          </span>
-        </footer>
-      </main>
-      <dialog ref={logDialog} className="log-dialog">
-        <div className="panel-title">
-          <span>
-            <Terminal size={17} />
-            Engine log
-          </span>
-          <button
-            className="icon-button"
-            aria-label="Close log"
-            onClick={() => logDialog.current?.close()}
-          >
-            <X size={18} />
-          </button>
-        </div>
-        <pre>{logs.length ? logs.join("\n") : "No engine messages yet."}</pre>
-        <div className="log-actions">
-          <span>Last 1,000 messages · kept in memory</span>
-          <button
-            onClick={async () => {
-              if (await copy(logs.join("\n"))) {
-                setLogCopied(true);
-                setTimeout(() => setLogCopied(false), 2000);
-              }
-            }}
-          >
-            {logCopied ? <Check size={15} /> : <Copy size={15} />}{" "}
-            {logCopied ? "Copied" : "Copy log"}
-          </button>
-        </div>
-      </dialog>
-    </div>
+          <pre>{logs.length ? logs.join("\n") : "No engine messages yet."}</pre>
+          <div className="log-actions">
+            <span>Last 1,000 messages · kept in memory</span>
+            <CopyButton
+              value={() => logs.join("\n")}
+              label="Copy log"
+              copiedLabel="Copied"
+              resetAfter={2000}
+              iconSize={15}
+              onCopy={copy}
+            />
+          </div>
+        </dialog>
+      </div>
+    </AppContextMenu>
   );
 }

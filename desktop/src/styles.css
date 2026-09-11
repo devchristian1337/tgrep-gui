@@ -1,9 +1,28 @@
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@theme inline {
+  --color-background: var(--color-paper);
+  --color-foreground: var(--color-ink);
+  --color-muted-foreground: var(--color-muted);
+  --color-border: var(--color-rule);
+  --color-popover: var(--color-surface);
+  --color-popover-foreground: var(--color-ink);
+  --color-menu-hover: var(--color-hover);
+  --color-destructive: var(--color-danger);
+  --color-card: var(--color-surface);
+  --color-card-foreground: var(--color-ink);
+  --color-primary: var(--color-accent);
+  --color-primary-foreground: var(--color-accent-ink);
+  --color-secondary: var(--color-sidebar);
+}
 /* Hallmark · macrostructure: application workbench · theme: Cobalt · enrichment: none */
 * {
   box-sizing: border-box;
 }
 html,
 body {
+  user-select: none;
   margin: 0;
   overflow-x: clip;
 }
@@ -36,6 +55,15 @@ body {
   color: var(--color-ink);
   background: var(--color-paper);
 }
+input,
+textarea,
+[contenteditable="true"],
+.code-scroll,
+.log-dialog pre,
+.error-banner span,
+.error-inline {
+  user-select: text;
+}
 button,
 input,
 select {
@@ -48,7 +76,11 @@ input[type="range"],
 select {
   cursor: pointer;
 }
-button {
+/* This chrome is unlayered, so it outranks every Tailwind utility whatever
+   its specificity. `:where()` excludes the shadcn button (it carries
+   `data-slot="button"`) at no specificity cost, so its variants can style
+   themselves; font, cursor and the focus ring below stay shared. */
+button:where(:not([data-slot="button"])) {
   appearance: none;
   display: inline-flex;
   align-items: center;
@@ -63,13 +95,13 @@ button {
   white-space: nowrap;
   overflow: visible;
 }
-button:hover:not(:disabled) {
+button:where(:not([data-slot="button"])):hover:not(:disabled) {
   background: var(--color-hover);
 }
-button:active:not(:disabled) {
+button:where(:not([data-slot="button"])):active:not(:disabled) {
   transform: translateY(1px);
 }
-button:disabled {
+button:where(:not([data-slot="button"])):disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -148,18 +180,154 @@ kbd {
 .quiet {
   color: var(--color-muted);
 }
-.app-shell {
-  display: grid;
-  grid-template-columns: 208px minmax(0, 1fr);
+.desktop-frame {
+  display: flex;
+  flex-direction: column;
   height: calc(100dvh / var(--preview-zoom, 1));
-  min-height: 560px;
+}
+.titlebar {
+  height: 34px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 14px;
+  background: var(--color-sidebar);
+  border-bottom: 1px solid var(--color-rule);
+  user-select: none;
+}
+.titlebar-title {
+  font: var(--text-xs) var(--font-mono);
+  letter-spacing: 0.06em;
+  color: var(--color-muted);
+  pointer-events: none;
+}
+.app-shell {
+  --sidebar-width: 208px;
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  transition: grid-template-columns var(--resize-dur) var(--resize-ease);
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .sidebar {
+  width: var(--sidebar-width);
+  height: 100%;
+  overflow-y: auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--color-sidebar);
   border-right: 1px solid var(--color-rule);
   padding: 26px 16px 18px;
+}
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 0px minmax(0, 1fr);
+}
+.sidebar-track {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity var(--resize-dur) var(--resize-ease),
+    visibility 0s;
+}
+.sidebar-collapsed .sidebar-track {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--resize-dur) var(--resize-ease),
+    visibility 0s var(--resize-dur);
+}
+.sidebar-toggle {
+  flex-shrink: 0;
+}
+.ui-accordion-header {
+  margin: 0;
+  font: inherit;
+}
+.ui-accordion-trigger {
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  padding: 8px;
+  background: transparent;
+  justify-content: space-between;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-align: left;
+  color: var(--color-ink);
+}
+.ui-accordion-trigger svg {
+  width: 16px;
+  height: 16px;
+  color: var(--color-muted);
+}
+.ui-accordion-trigger[aria-expanded="true"] .accordion-chevron {
+  transform: scaleY(-1);
+}
+.accordion-chevron {
+  transform: scaleY(1);
+  transition: transform var(--acc-chevron) var(--acc-ease);
+}
+.accordion-chevron path {
+  vector-effect: non-scaling-stroke;
+}
+.ui-accordion-content {
+  height: var(--accordion-panel-height);
+  overflow: hidden;
+  opacity: 1;
+  transition:
+    height var(--acc-expand) var(--acc-ease),
+    opacity var(--acc-expand) var(--acc-ease);
+}
+.ui-accordion-content[data-starting-style],
+.ui-accordion-content[data-ending-style] {
+  height: 0;
+  opacity: 0;
+}
+.ui-accordion-content[data-ending-style] {
+  transition-duration: var(--acc-collapse);
+}
+.ui-accordion-inner {
+  padding-bottom: 4px;
+}
+.accordion-links {
+  list-style: none;
+  margin: 2px 0 6px 24px;
+  padding: 0 0 0 12px;
+  border-left: 1px solid var(--color-rule);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.accordion-links button,
+.accordion-links a {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 32px;
+  border: 0;
+  border-radius: 4px;
+  padding: 6px 4px;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  text-align: left;
+  text-decoration: none;
+  white-space: normal;
+}
+.accordion-links [aria-current="page"] {
+  color: var(--color-accent);
+  background: var(--color-selection);
+  font-weight: 500;
+}
+.accordion-links a:hover,
+.accordion-links button:hover:not(:disabled) {
+  color: var(--color-ink);
+  background: var(--color-hover);
 }
 .brand {
   display: flex;
@@ -212,9 +380,6 @@ nav button.active {
   background: var(--color-selection);
   border-color: var(--color-rule);
   font-weight: 600;
-}
-.nav-key {
-  margin-left: auto;
 }
 .recent-projects {
   margin: 37px 10px 0;
@@ -281,6 +446,40 @@ main {
   align-items: center;
   justify-content: space-between;
   font-size: var(--text-sm);
+}
+.titlebar-drag-space {
+  flex: 1;
+  align-self: stretch;
+  min-width: 20px;
+}
+.window-controls {
+  display: flex;
+  align-self: stretch;
+  flex-shrink: 0;
+}
+.window-controls button {
+  width: 46px;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-muted);
+}
+.window-controls button:hover {
+  background: color-mix(in oklch, var(--color-ink) 8%, transparent);
+  color: var(--color-ink);
+}
+.window-controls button:active {
+  transform: none;
+}
+.window-controls button:focus-visible {
+  outline-offset: -3px;
+}
+.window-controls .window-close:hover {
+  background: #c42b1c;
+  color: white;
 }
 .topbar > span {
   display: flex;
@@ -455,11 +654,88 @@ main {
   border-radius: 50%;
   background: var(--color-accent);
 }
+/* shadcn context menu (Base UI): Base UI sets data-starting-style and
+   data-ending-style around open/close, so the popup fades and scales
+   with a plain CSS transition. */
+.ui-context-menu {
+  font-family: var(--font-body);
+  transition:
+    opacity 150ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 150ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* The popup and its items are focused programmatically; the highlighted
+   row is the focus indicator, so the global [tabindex]:focus-visible ring
+   must not paint around them. */
+.ui-context-menu:focus-visible,
+.ui-context-menu [role="menuitem"]:focus-visible {
+  outline: none;
+}
+.ui-context-menu[data-starting-style],
+.ui-context-menu[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.95);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-context-menu {
+    transition: none;
+  }
+}
+/* Accordion expand (transitions.dev #21): grid-template-rows 0fr → 1fr
+   gives a clean height animation with no JS measurement; the inner
+   element clips overflow. Tokens live in tokens.css (--acc-*). */
+.t-acc-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--acc-collapse) var(--acc-ease);
+}
+.t-acc[data-open="true"] .t-acc-panel {
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--acc-expand) var(--acc-ease);
+}
+.t-acc-panel-inner {
+  overflow: hidden;
+  opacity: 0;
+  filter: blur(2px);
+  transition:
+    opacity var(--acc-collapse) var(--acc-ease),
+    filter var(--acc-collapse) var(--acc-ease);
+}
+.t-acc[data-open="true"] .t-acc-panel-inner {
+  opacity: 1;
+  filter: blur(0);
+  transition:
+    opacity var(--acc-expand) var(--acc-ease),
+    filter var(--acc-expand) var(--acc-ease);
+}
+.t-acc-chevron {
+  display: inline-flex;
+  transform: scaleY(1);
+  transform-origin: center;
+  transition: transform var(--acc-chevron) var(--acc-ease);
+}
+.t-acc-chevron path {
+  vector-effect: non-scaling-stroke;
+}
+.t-acc[data-open="true"] .t-acc-chevron {
+  transform: scaleY(-1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-acc-panel,
+  .t-acc-panel-inner,
+  .t-acc-chevron {
+    transition: none !important;
+  }
+}
+/* Padding lives one level below the clipping element (padding on the
+   clipped box or the 0fr track leaves a residual strip, so the panel
+   never fully closes); the 2px side/bottom inset keeps the input focus
+   ring from being clipped by overflow: hidden. */
 .filter-fields {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
-  padding-top: 16px;
+  padding: 16px 2px 2px;
+  margin: 0 -2px;
 }
 .filter-fields label {
   display: flex;
@@ -634,12 +910,17 @@ main {
 }
 .empty-preview {
   flex: 1;
+  min-height: 0;
+  overflow: auto;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: safe center;
   flex-direction: column;
   text-align: center;
   padding: 30px 16px;
+}
+.empty-preview > * {
+  flex-shrink: 0;
 }
 .empty-symbol {
   width: 64px;
@@ -973,6 +1254,38 @@ fieldset:disabled .density-options {
   color: var(--color-success);
   font-size: var(--text-sm);
 }
+/* Modal open / close (transitions.dev #06): the dialog scales up from
+   --modal-scale and dips back on close. Tokens live in tokens.css
+   (--modal-*); App.tsx flips .is-open a frame after showModal() and holds
+   .is-closing for --modal-close-dur before close(). */
+.t-modal {
+  transform-origin: center;
+  transform: scale(var(--modal-scale));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--modal-open-dur) var(--modal-ease),
+    opacity var(--modal-open-dur) var(--modal-ease);
+  will-change: transform, opacity;
+}
+.t-modal.is-open {
+  transform: scale(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+.t-modal.is-closing {
+  transform: scale(var(--modal-scale-close));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--modal-close-dur) var(--modal-ease),
+    opacity var(--modal-close-dur) var(--modal-ease);
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-modal {
+    transition: none !important;
+  }
+}
 .log-dialog {
   padding: 0;
   width: min(900px, 90vw);
@@ -981,8 +1294,24 @@ fieldset:disabled .density-options {
   background: var(--color-surface);
   color: var(--color-ink);
 }
+/* The scrim is a pseudo-element, so it rides the same two state classes as
+   the panel instead of popping in at full strength. */
 .log-dialog::backdrop {
   background: var(--color-overlay);
+  opacity: 0;
+  transition: opacity var(--modal-open-dur) var(--modal-ease);
+}
+.log-dialog.is-open::backdrop {
+  opacity: 1;
+}
+.log-dialog.is-closing::backdrop {
+  opacity: 0;
+  transition: opacity var(--modal-close-dur) var(--modal-ease);
+}
+@media (prefers-reduced-motion: reduce) {
+  .log-dialog::backdrop {
+    transition: none !important;
+  }
 }
 .log-dialog .panel-title > span {
   display: flex;
@@ -1016,7 +1345,7 @@ fieldset:disabled .density-options {
 }
 @media (max-width: 1100px) {
   .app-shell {
-    grid-template-columns: 172px minmax(0, 1fr);
+    --sidebar-width: 172px;
   }
   .search-view {
     padding: 24px;
@@ -1042,33 +1371,6 @@ fieldset:disabled .density-options {
   }
 }
 @media (max-width: 800px) {
-  .app-shell {
-    grid-template-columns: 64px minmax(0, 1fr);
-  }
-  .sidebar {
-    padding: 22px 8px;
-  }
-  .brand {
-    padding: 0;
-    justify-content: center;
-  }
-  .brand > span:last-child,
-  .nav-caption,
-  .recent-projects,
-  .nav-key,
-  .engine-label {
-    display: none;
-  }
-  nav {
-    margin-top: 32px;
-  }
-  nav button,
-  .sidebar-bottom > button {
-    font-size: 0;
-    padding: 10px;
-    gap: 0;
-    justify-content: center;
-  }
   .topbar {
     padding: 0 20px;
   }
@@ -1095,14 +1397,45 @@ fieldset:disabled .density-options {
   }
 }
 @media (max-width: 600px) {
-  .app-shell {
-    display: flex;
-    flex-direction: column;
+  .sidebar-track {
+    display: grid;
+    grid-template-rows: 1fr;
+    flex-shrink: 0;
+    transition:
+      grid-template-rows var(--resize-dur) var(--resize-ease),
+      opacity var(--resize-dur) var(--resize-ease),
+      visibility 0s;
+  }
+  .sidebar-collapsed .sidebar-track {
+    grid-template-rows: 0fr;
+    transition:
+      grid-template-rows var(--resize-dur) var(--resize-ease),
+      opacity var(--resize-dur) var(--resize-ease),
+      visibility 0s var(--resize-dur);
+  }
+  .sidebar-track > .sidebar {
+    width: auto;
+    height: auto;
+    overflow: hidden;
+  }
+  .sidebar-collapsed .sidebar {
+    padding-block: 0;
+    border-bottom-width: 0;
+  }
+  .topbar .workspace-label {
+    display: none;
+  }
+  .desktop-frame {
     height: auto;
     min-height: calc(100dvh / var(--preview-zoom, 1));
   }
+  .app-shell {
+    display: flex;
+    flex-direction: column;
+  }
   .sidebar {
     flex-direction: row;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     padding: 10px 16px;
@@ -1125,8 +1458,18 @@ fieldset:disabled .density-options {
     gap: 8px;
   }
   .sidebar nav {
-    flex-direction: row;
+    flex-direction: column;
+    flex-basis: 100%;
+    order: 3;
     margin: 0;
+  }
+  .sidebar .nav-caption,
+  .sidebar .recent-projects,
+  .sidebar .engine-label {
+    display: none;
+  }
+  .sidebar-bottom {
+    width: auto;
   }
   .sidebar-bottom {
     margin: 0;

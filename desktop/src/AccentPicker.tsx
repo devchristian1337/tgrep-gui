@@ -6,6 +6,7 @@ import {
   useState,
   type PointerEvent,
 } from "react";
+import { Tooltip } from "@/components/ui/beui-tooltip";
 import { Check, ChevronDown, X } from "lucide-react";
 import { accentHex } from "./appearance";
 import "./accent-picker.css";
@@ -309,17 +310,17 @@ export default function AccentPicker({
             <span>Presets</span>
             <div className="accent-swatches">
               {presets.map(([name, color]) => (
-                <button
-                  type="button"
-                  key={name}
-                  aria-label={`${name} ${color}`}
-                  aria-pressed={hex === color}
-                  title={name}
-                  onClick={() => choose(color)}
-                  style={{ background: color }}
-                >
-                  {hex === color && <Check size={14} strokeWidth={3} />}
-                </button>
+                <Tooltip key={name} content={name} side="top">
+                  <button
+                    type="button"
+                    aria-label={`${name} ${color}`}
+                    aria-pressed={hex === color}
+                    onClick={() => choose(color)}
+                    style={{ background: color }}
+                  >
+                    {hex === color && <Check size={14} strokeWidth={3} />}
+                  </button>
+                </Tooltip>
               ))}
             </div>
           </div>

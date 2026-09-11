@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Tooltip } from "@/components/ui/beui-tooltip";
 import { Check, FolderOpen, Monitor, Sun, Moon, RefreshCw } from "lucide-react";
 import type { Settings as Preferences, EngineUpdate } from "./types";
 import { api, native } from "./api";
@@ -109,7 +110,11 @@ export default function Settings({
           }
         }}
       >
-        <fieldset disabled={busy || saving || restarting}>
+        <fieldset
+          id="settings-appearance"
+          tabIndex={-1}
+          disabled={busy || saving || restarting}
+        >
           <legend>Appearance</legend>
           <div className="setting-row">
             <div>
@@ -155,7 +160,11 @@ export default function Settings({
             />
           </div>
         </fieldset>
-        <fieldset disabled={busy || saving || restarting}>
+        <fieldset
+          id="settings-engine"
+          tabIndex={-1}
+          disabled={busy || saving || restarting}
+        >
           <legend>Search engine</legend>
           <div className="setting-row">
             <div>
@@ -168,26 +177,29 @@ export default function Settings({
                     : `${version} · in use`}
               </p>
             </div>
-            <button
-              type="button"
-              disabled={!native || updating || Boolean(draft.enginePath.trim())}
-              aria-label="Update tgrep"
-              title="Check GitHub for a newer official tgrep and install it for the next launch"
-              onClick={async () => {
-                setUpdating(true);
-                onUpdateStatus("Checking for tgrep updates…");
-                try {
-                  onUpdateResult(await api.checkEngine(draft));
-                } catch (e) {
-                  onUpdateStatus(String(e));
-                } finally {
-                  setUpdating(false);
+            <Tooltip content="Check GitHub for a newer tgrep" side="left">
+              <button
+                type="button"
+                disabled={
+                  !native || updating || Boolean(draft.enginePath.trim())
                 }
-              }}
-            >
-              <RefreshCw size={16} className={updating ? "spin" : ""} />
-              {updating ? "Checking…" : "Update tgrep"}
-            </button>
+                aria-label="Update tgrep"
+                onClick={async () => {
+                  setUpdating(true);
+                  onUpdateStatus("Checking for tgrep updates…");
+                  try {
+                    onUpdateResult(await api.checkEngine(draft));
+                  } catch (e) {
+                    onUpdateStatus(String(e));
+                  } finally {
+                    setUpdating(false);
+                  }
+                }}
+              >
+                <RefreshCw size={16} className={updating ? "spin" : ""} />
+                {updating ? "Checking…" : "Update tgrep"}
+              </button>
+            </Tooltip>
           </div>
           {updateStatus && (
             <p className="fieldset-note" role="status">
@@ -297,7 +309,11 @@ export default function Settings({
             </div>
           </div>
         </fieldset>
-        <fieldset disabled={busy || saving || restarting}>
+        <fieldset
+          id="settings-shortcuts"
+          tabIndex={-1}
+          disabled={busy || saving || restarting}
+        >
           <legend>Shortcuts</legend>
           <p className="fieldset-note">
             Click a shortcut, then press the new keys. Esc cancels editing.

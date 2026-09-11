@@ -11,6 +11,7 @@ async function mockDesktop(
       const w = window as any;
       w.isTauri = true;
       let cancelled = false;
+      let maximized = false;
       let currentSettings = {
         enginePath: "",
         indexPath: "",
@@ -28,7 +29,12 @@ async function mockDesktop(
       const callbacks = new Map();
       let seq = 0;
       w.calls = [];
+      w.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
       w.__TAURI_INTERNALS__ = {
+        metadata: {
+          currentWindow: { label: "main" },
+          currentWebview: { label: "main" },
+        },
         transformCallback: (cb: any) => {
           callbacks.set(++seq, cb);
           return seq;
@@ -36,6 +42,15 @@ async function mockDesktop(
         unregisterCallback: (id: number) => callbacks.delete(id),
         invoke: async (cmd: string, args: any) => {
           w.calls.push({ cmd, args });
+          if (cmd === "plugin:window|is_maximized") return maximized;
+          if (cmd === "plugin:window|toggle_maximize") {
+            maximized = !maximized;
+            return;
+          }
+          if (cmd === "plugin:window|minimize" || cmd === "plugin:window|close")
+            return;
+          if (cmd === "plugin:event|listen") return ++seq;
+          if (cmd === "plugin:event|unlisten") return;
           if (cmd === "load_settings") return currentSettings;
           if (cmd === "save_settings") {
             if (w.saveError) throw w.saveError;
@@ -138,6 +153,198 @@ async function mockDesktop(
     { updateReady, automaticUpdates },
   );
 }
+test("empty preview remains reachable after reducing window height", async ({
+  page,
+}) => {
+  await mockDesktop(page);
+  await page.goto("/");
+  await expect(page.locator(".empty-preview h2")).toBeVisible();
+  for (const height of [600, 480, 960]) {
+    await page.setViewportSize({ width: 1280, height });
+    for (const selector of [
+      ".empty-symbol",
+      ".empty-preview h2",
+      ".empty-preview p",
+      ".keyboard-hint",
+    ]) {
+      const content = page.locator(selector);
+      await content.scrollIntoViewIfNeeded();
+      const bounds = await content.boundingBox();
+      const panel = await page.locator(".preview-panel").boundingBox();
+      expect(bounds!.y).toBeGreaterThanOrEqual(panel!.y);
+      expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(
+        panel!.y + panel!.height + 1,
+      );
+    }
+  }
+});
+
+for (const width of [1280, 768, 375]) {
+  test(`sidebar can collapse and reopen at ${width}px`, async ({ page }) => {
+    await mockDesktop(page);
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto("/");
+    const pattern = page.getByRole("textbox", { name: "Search pattern" });
+    await pattern.fill("keep this query");
+    const expandedMain = await page.locator("main").boundingBox();
+    const toggle = page.getByRole("button", { name: "Collapse sidebar" });
+    await toggle.focus();
+    await page.keyboard.press("Enter");
+    const expand = page.getByRole("button", { name: "Expand sidebar" });
+    await expect(expand).toBeFocused();
+    await expect(expand).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByRole("navigation")).toHaveCount(0);
+    await expect(pattern).toHaveValue("keep this query");
+    await expect
+      .poll(async () => (await page.locator("main").boundingBox())!.width)
+      .toBe(width);
+    const collapsedMain = await page.locator("main").boundingBox();
+    expect(collapsedMain!.width).toBe(width);
+    if (width > 600)
+      expect(collapsedMain!.width).toBeGreaterThan(expandedMain!.width);
+    await page.keyboard.press("Space");
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(pattern).toHaveValue("keep this query");
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await toggle.click();
+    await expect(page.locator(".settings-view")).toBeVisible();
+    await page.reload();
+    await expect(expand).toHaveAttribute("aria-expanded", "false");
+    await expand.click();
+    await expect(page.getByRole("navigation")).toBeVisible();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBe(width);
+  });
+}
+
+test("sidebar and accordion respect reduced motion and rapid toggles", async ({
+  page,
+}) => {
+  await mockDesktop(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Collapse sidebar" }).click();
+  await expect(page.locator(".sidebar-track")).toBeHidden();
+  await expect(page.locator(".app-shell")).toHaveCSS(
+    "transition-duration",
+    "0s",
+  );
+  await page.getByRole("button", { name: "Expand sidebar" }).click();
+  const settings = page.getByRole("button", { name: "Settings", exact: true });
+  await settings.click();
+  await expect(
+    page.getByRole("button", { name: "Appearance", exact: true }),
+  ).toHaveCount(0);
+  await settings.click();
+  await expect(page.locator(".accordion-chevron")).toHaveCSS(
+    "transition-duration",
+    "0s",
+  );
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await settings.focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await expect(settings).toHaveAttribute("aria-expanded", "true");
+  await page.getByRole("button", { name: "Appearance", exact: true }).click();
+  await expect(page.locator("#settings-appearance")).toBeFocused();
+});
+
+test("interface labels cannot be selected while editable text and logs remain selectable", async ({
+  page,
+}) => {
+  await mockDesktop(page);
+  await page.goto("/");
+  const heading = page.getByRole("heading", { name: "Find your next line." });
+  await heading.dblclick();
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
+  await page.keyboard.press("Control+a");
+  expect(
+    await page.evaluate(() => window.getSelection()?.toString()),
+  ).not.toContain("Find your next line.");
+  const input = page.getByRole("textbox", { name: "Search pattern" });
+  await input.fill("editable query");
+  await input.press("Control+a");
+  expect(
+    await input.evaluate((el: HTMLInputElement) =>
+      el.value.slice(el.selectionStart!, el.selectionEnd!),
+    ),
+  ).toBe("editable query");
+  await page.getByRole("button", { name: "Engine log", exact: true }).click();
+  const logs = page.locator(".log-dialog pre");
+  await logs.dblclick();
+  expect(await page.evaluate(() => window.getSelection()?.toString())).not.toBe(
+    "",
+  );
+});
+
+test("settings accordion navigates to real sections and preserves drafts", async ({
+  page,
+}) => {
+  await mockDesktop(page);
+  await page.goto("/");
+  const menu = page.getByRole("button", { name: "Settings", exact: true });
+  await expect(menu).toHaveAttribute("aria-expanded", "true");
+  await menu.click();
+  await expect(menu).toHaveAttribute("aria-expanded", "false");
+  await expect(
+    page.getByRole("button", { name: "Appearance", exact: true }),
+  ).toHaveCount(0);
+  await menu.focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Shortcuts", exact: true }).click();
+  await expect(page.locator("#settings-shortcuts")).toBeFocused();
+  await page.getByRole("button", { name: "Appearance", exact: true }).click();
+  await expect(page.locator("#settings-appearance")).toBeFocused();
+  await page.getByRole("button", { name: "Dark", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Search engine", exact: true })
+    .click();
+  await expect(page.locator("#settings-engine")).toBeFocused();
+  await page.getByRole("button", { name: "Appearance", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Dark", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+});
+
+test("integrated titlebar controls the native window", async ({ page }) => {
+  await mockDesktop(page);
+  await page.goto("/");
+  await expect(page.locator(".nav-key")).toHaveCount(0);
+  await expect(page.locator(".titlebar-drag-space")).toHaveAttribute(
+    "data-tauri-drag-region",
+    "true",
+  );
+  await page
+    .getByRole("button", { name: "Maximize window", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Restore window", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Restore window", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Maximize window", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Minimize window", exact: true })
+    .click();
+  const close = page.getByRole("button", { name: "Close window", exact: true });
+  await close.hover();
+  await expect(page.getByRole("tooltip")).toHaveText("Close");
+  await close.click();
+  const commands = await page.evaluate(() =>
+    (window as any).calls.map((call: any) => call.cmd),
+  );
+  expect(
+    commands.filter((cmd: string) => cmd === "plugin:window|toggle_maximize"),
+  ).toHaveLength(2);
+  expect(commands).toContain("plugin:window|minimize");
+  expect(commands).toContain("plugin:window|close");
+  await page.screenshot({ path: "test-results/integrated-titlebar.png" });
+});
+
 test("ready engine update exposes an app restart action", async ({ page }) => {
   await mockDesktop(page, true, false);
   await page.goto("/");
@@ -338,7 +545,10 @@ test("select all copies matching lines beyond the virtualized viewport", async (
     }));
   });
   await page.getByLabel("Search pattern").fill("match");
-  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page
+    .getByRole("main")
+    .getByRole("button", { name: "Search", exact: true })
+    .click();
   await page.getByRole("button", { name: /search.rs/ }).click();
   await page.locator(".code-line").first().click();
   await page.keyboard.press("Control+a");
@@ -358,7 +568,9 @@ test("browser preview zoom scales controls and resets layout", async ({
   page,
 }) => {
   await page.goto("/");
-  const search = page.getByRole("button", { name: "Search", exact: true });
+  const search = page
+    .getByRole("main")
+    .getByRole("button", { name: "Search", exact: true });
   const initial = (await search.boundingBox())!.height;
   await page.keyboard.press("Control+Equal");
   await expect
@@ -387,7 +599,7 @@ test("folder field focus rings the shell instead of the inner input", async ({
   await expect(shell).not.toHaveCSS("box-shadow", "none");
   await page.screenshot({ path: "test-results/workbench-folder-focus.png" });
 });
-test("right-click on the workbench does not keep the browser context menu", async ({
+test("right-click on the workbench replaces the browser context menu", async ({
   page,
 }) => {
   await mockDesktop(page);
@@ -420,7 +632,10 @@ test("right-click on the workbench does not keep the browser context menu", asyn
     input.dispatchEvent(event);
     return event.defaultPrevented;
   });
-  expect(onQuery).toBe(false);
+  expect(onQuery).toBe(true);
+  await expect(page.getByRole("menu")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
   const reloadBlocked = await page.evaluate(() => {
     const event = new KeyboardEvent("keydown", {
       key: "r",
@@ -436,7 +651,10 @@ test("right-click on the workbench does not keep the browser context menu", asyn
 test("browser preview is honest and validates input", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("Interface preview ·")).toBeVisible();
-  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page
+    .getByRole("main")
+    .getByRole("button", { name: "Search", exact: true })
+    .click();
   await expect(page.getByRole("alert")).toContainText(
     "Choose a project folder",
   );
@@ -444,7 +662,7 @@ test("browser preview is honest and validates input", async ({ page }) => {
   await expect(page.getByLabel("Include files")).toBeVisible();
   await expect(page.getByLabel("Ignore case")).toHaveCSS("cursor", "pointer");
   await expect(
-    page.getByRole("button", { name: "Search", exact: true }),
+    page.getByRole("main").getByRole("button", { name: "Search", exact: true }),
   ).toHaveCSS("cursor", "pointer");
 });
 test("Filters button hover is a complete control", async ({ page }) => {
@@ -473,7 +691,10 @@ test("search options, streaming results, stale previews and editor requests", as
   await page.getByLabel("Search pattern").fill("hello");
   await page.getByRole("button", { name: "Filters", exact: true }).click();
   await page.getByLabel("Include files").fill("*.{rs,ts}");
-  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page
+    .getByRole("main")
+    .getByRole("button", { name: "Search", exact: true })
+    .click();
   await expect(page.locator(".results-toolbar")).toContainText(
     "3 matches in 2 files",
   );
@@ -498,17 +719,26 @@ test("cancellation retains partial results and errors recover", async ({
   await mockDesktop(page);
   await page.goto("/");
   await page.getByLabel("Search pattern").fill("slow");
-  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page
+    .getByRole("main")
+    .getByRole("button", { name: "Search", exact: true })
+    .click();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page.locator(".statusbar")).toContainText("Search cancelled");
   await expect(page.getByRole("button", { name: /main.rs/ })).toBeEnabled();
   await page.getByLabel("Search pattern").fill("invalid[");
-  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page
+    .getByRole("main")
+    .getByRole("button", { name: "Search", exact: true })
+    .click();
   await expect(page.getByRole("alert")).toContainText(
     "Invalid regular expression",
   );
   await page.getByLabel("Search pattern").fill("absent");
-  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page
+    .getByRole("main")
+    .getByRole("button", { name: "Search", exact: true })
+    .click();
   await expect(page.locator(".statusbar")).toContainText("No matches");
 });
 test("settings can check for a tgrep engine update", async ({ page }) => {
@@ -590,7 +820,10 @@ test("White uses light native controls even when the OS is dark", async ({
     }));
   });
   await page.getByLabel("Search pattern").fill("match");
-  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page
+    .getByRole("main")
+    .getByRole("button", { name: "Search", exact: true })
+    .click();
   await page.getByRole("button", { name: /search.rs/ }).click();
   await expect(page.locator(".code-line").first()).toBeVisible();
   await expect(page.locator(".code-scroll")).toHaveCSS("color-scheme", "light");
@@ -694,6 +927,68 @@ test("settings persist theme and accent, shortcuts and log dialog work", async (
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).not.toBeVisible();
 });
+test("the engine log dialog scales in and holds the top layer to close", async ({
+  page,
+}) => {
+  await mockDesktop(page);
+  await page.goto("/");
+  const dialog = page.getByRole("dialog");
+  await page.getByRole("button", { name: "Engine log" }).click();
+  await expect(dialog).toHaveClass(/is-open/);
+  await expect(dialog).toHaveCSS("opacity", "1");
+  await expect(dialog).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
+  // The scrim is a pseudo-element, so it needs a read of its own.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          getComputedStyle(document.querySelector(".log-dialog")!, "::backdrop")
+            .opacity,
+      ),
+    )
+    .toBe("1");
+  // Closing from inside the page: the click is synchronous, so this catches
+  // the dialog mid-exit. It has to still hold the top layer, or the
+  // scale-down is cut off the moment the button is pressed.
+  const midExit = await page.evaluate(() => {
+    const el = document.querySelector(".log-dialog") as HTMLDialogElement;
+    el.querySelector<HTMLButtonElement>('[aria-label="Close log"]')!.click();
+    return { open: el.open, closing: el.classList.contains("is-closing") };
+  });
+  expect(midExit).toEqual({ open: true, closing: true });
+  await expect(dialog).not.toBeVisible();
+  // A closed dialog leaves the a11y tree, so the cleanup is read off the node.
+  await expect(page.locator(".log-dialog")).not.toHaveClass(/is-closing/);
+});
+test("the engine log copy button confirms a copy and reverts", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await mockDesktop(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Engine log" }).click();
+  await page.getByRole("button", { name: "Copy log" }).click();
+  const copied = page.getByRole("button", { name: "Copied" });
+  await expect(copied).toBeDisabled();
+  await expect(copied.locator('[data-slot="copied-icon"]')).toHaveCSS(
+    "opacity",
+    "1",
+  );
+  await expect(copied.locator('[data-slot="copy-icon"]')).toHaveCSS(
+    "opacity",
+    "0",
+  );
+  // The app chrome is unlayered, so it outranks Tailwind by default: these
+  // two prove the shadcn button styles itself instead of fading out at 0.45
+  // opacity and shrinking to the rem-based 31.5px next to 36px controls.
+  await expect(copied).toHaveCSS("opacity", "1");
+  await expect(copied).toHaveCSS("min-height", "36px");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(
+    "Fixture log: search completed",
+  );
+  await expect(page.getByRole("button", { name: "Copy log" })).toBeEnabled();
+});
 test("the status bar is never overlapped by the workbench", async ({
   page,
 }) => {
@@ -776,3 +1071,57 @@ for (const width of [320, 375, 414, 768, 1440])
       ),
     ).toBe(true);
   });
+
+test("context menu adapts to text fields, result rows and preview lines", async ({
+  page,
+}) => {
+  await mockDesktop(page);
+  await page.goto("/");
+  await page.locator(".search-heading h1").click({ button: "right" });
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  const pattern = page.getByLabel("Search pattern");
+  await pattern.fill("hello");
+  await pattern.click({ button: "right" });
+  await expect(page.getByRole("menu")).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Paste" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Copy" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await page.getByRole("menuitem", { name: "Select all" }).click();
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await expect(pattern).toBeFocused();
+  expect(
+    await pattern.evaluate(
+      (el: HTMLInputElement) => el.selectionEnd! - el.selectionStart!,
+    ),
+  ).toBe(5);
+  await page
+    .getByRole("main")
+    .getByRole("button", { name: "Search", exact: true })
+    .click();
+  const row = page.getByRole("button", { name: /main.rs/ });
+  await row.click({ button: "right" });
+  await expect(page.getByRole("menuitem", { name: "Copy path" })).toBeVisible();
+  await page.screenshot({ path: "test-results/context-menu.png" });
+  await page.getByRole("menuitem", { name: "Open in editor" }).click();
+  await row.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Reveal in folder" }).click();
+  await row.click();
+  await expect(page.locator(".code-line").first()).toBeVisible();
+  await page.locator(".code-line").first().click({ button: "right" });
+  await expect(
+    page.getByRole("menuitem", { name: /Open at line \d+/ }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  const opens = await page.evaluate(() =>
+    (window as any).calls
+      .filter((call: any) => call.cmd === "open_result")
+      .map((call: any) => [call.args.path, call.args.containingFolder]),
+  );
+  expect(opens).toEqual([
+    ["C:\\projects\\atlas\\src\\main.rs", false],
+    ["C:\\projects\\atlas\\src\\main.rs", true],
+  ]);
+});

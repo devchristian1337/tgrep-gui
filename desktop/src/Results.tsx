@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import type { Hit, Preview, MatchLine, Shortcuts } from "./types";
 import { formatParts, formatShortcut, matches } from "./shortcuts";
+import { Tooltip } from "@/components/ui/beui-tooltip";
 export function Highlight({ line }: { line: MatchLine }) {
   const pieces = [];
   let offset = 0;
@@ -120,6 +121,8 @@ export function FileList({
                   }}
                   onClick={() => onSelect(hit.path)}
                   title={hit.relativePath}
+                  data-context-path={hit.path}
+                  data-context-relative={hit.relativePath}
                 >
                   <FileCode2 size={18} />
                   <span className="file-meta">
@@ -193,27 +196,32 @@ export function CodePreview({
         </span>
         {hit && (
           <div className="actions">
-            <button
-              className="icon-button"
-              title="Copy file path"
-              aria-label="Copy file path"
-              onClick={async () => {
-                if (await onCopy(hit.path)) {
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 2000);
-                }
-              }}
+            <Tooltip
+              content={copied ? "Copied" : "Copy file path"}
+              side="bottom"
             >
-              {copied ? <Check size={16} /> : <Copy size={16} />}
-            </button>
-            <button
-              className="icon-button"
-              title="Open containing folder"
-              aria-label="Open containing folder"
-              onClick={onFolder}
-            >
-              <FolderOpen size={16} />
-            </button>
+              <button
+                className="icon-button"
+                aria-label="Copy file path"
+                onClick={async () => {
+                  if (await onCopy(hit.path)) {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }
+                }}
+              >
+                {copied ? <Check size={16} /> : <Copy size={16} />}
+              </button>
+            </Tooltip>
+            <Tooltip content="Open containing folder" side="bottom">
+              <button
+                className="icon-button"
+                aria-label="Open containing folder"
+                onClick={onFolder}
+              >
+                <FolderOpen size={16} />
+              </button>
+            </Tooltip>
             <button
               className="small-button"
               onClick={() => onOpen(lines[chosen[0] || 0]?.number || 1)}
@@ -339,6 +347,7 @@ export function CodePreview({
                   <div
                     key={v.index}
                     className={`code-line ${chosen.includes(v.index) ? "chosen" : ""}`}
+                    data-context-line={l.number}
                     style={{ transform: `translateY(${v.start}px)` }}
                     onClick={(e) => {
                       if (e.shiftKey) {
