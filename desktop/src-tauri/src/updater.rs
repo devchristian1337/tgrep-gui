@@ -229,14 +229,18 @@ impl<H: Hooks> Updater<H> {
         .map_err(|_| "Engine compatibility test timed out.".to_string())??;
         Ok(exe)
     }
-    pub async fn check(&self, active: Option<&str>, token: &CancellationToken) -> Result<String> {
+    pub async fn check(
+        &self,
+        active: Option<&str>,
+        token: &CancellationToken,
+    ) -> Result<UpdateStatus> {
         if self.arch != "x86_64" && self.arch != "aarch64" {
             return Ok("Automatic updates are unavailable for this architecture.".into());
         }
         fs::create_dir_all(&self.root).map_err(|e| e.to_string())?;
         let _lock = match lock_update(&self.root.join("update.lock")) {
             Ok(file) => file,
-            Err(e) if e.contains("Another app instance") => return Ok(e),
+            Err(e) if e.contains("Another app instance") => return Ok(e.into()),
             Err(e) => return Err(e),
         };
         let stage = self.root.join(format!(
@@ -251,9 +255,9 @@ impl<H: Hooks> Updater<H> {
         match result {
             Ok(msg) => Ok(msg),
             Err(e) if e == "Cancelled" || token.is_cancelled() => Err("Cancelled".into()),
-            Err(e) => Ok(format!(
-                "Engine update unavailable; keeping the current engine. {e}"
-            )),
+            Err(e) => Ok(
+                format!("Engine update unavailable; keeping the current engine. {e}").into(),
+            ),
         }
     }
     async fn check_locked(
@@ -261,7 +265,7 @@ impl<H: Hooks> Updater<H> {
         active: Option<&str>,
         token: &CancellationToken,
         stage: &Path,
-    ) -> Result<String> {
+    ) -> Result<UpdateStatus> {
         cancel(token)?;
         let current = match active {
             Some(exe) => self.hooks.version(exe).await?,
@@ -305,22 +309,25 @@ impl<H: Hooks> Updater<H> {
                     self.arch
                 )
             };
-            return Ok(match latest_without_windows {
-                Some(v) => format!(
-                    "{status} tgrep {v} has no Windows package for this architecture."
-                ),
-                None => status,
-            });
+            return Ok(
+                (match latest_without_windows {
+                    Some(v) => format!(
+                        "{status} tgrep {v} has no Windows package for this architecture."
+                    ),
+                    None => status,
+                })
+                .into(),
+            );
         };
         let state = self.read_state();
         if let Some(pending) = &state.current {
             if Version::parse(&pending.version).is_some_and(|v| v >= release.version) {
                 let path = self.executable(pending)?;
                 if path.is_file() && hash_file(&path)? == pending.sha256 {
-                    return Ok(format!(
+                    return Ok(UpdateStatus::ready(format!(
                         "tgrep {} is already installed. Restart the app to use it.",
                         pending.version
-                    ));
+                    )));
                 }
             }
         }
@@ -379,10 +386,38 @@ impl<H: Hooks> Updater<H> {
         let dest = self.state_path();
         let _ = fs::remove_file(&dest);
         fs::rename(&tmp, &dest).map_err(|e| e.to_string())?;
-        Ok(format!(
+        Ok(UpdateStatus::ready(format!(
             "tgrep {} verified and ready. Restart the app to use it.",
             release.version
-        ))
+        )))
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateStatus {
+    pub message: String,
+    pub restart_required: bool,
+}
+impl UpdateStatus {
+    fn ready(message: String) -> Self {
+        Self {
+            message,
+            restart_required: true,
+        }
+    }
+}
+impl From<String> for UpdateStatus {
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            restart_required: false,
+        }
+    }
+}
+impl From<&str> for UpdateStatus {
+    fn from(message: &str) -> Self {
+        message.to_string().into()
     }
 }
 
@@ -891,25 +926,26 @@ mod tests {
         assert!(updater.resolve(None).await.is_none());
         let result = updater.check(None, &token).await.unwrap();
         let first = updater.resolve(None).await;
-        assert!(result.contains("Restart the app") && first.is_some());
+        assert!(result.restart_required);
+        assert!(result.message.contains("Restart the app") && first.is_some());
         assert_eq!(*mock.probes.lock().unwrap(), 2);
         let again = updater.check(None, &token).await.unwrap();
-        assert!(again.contains("already installed"));
+        assert!(again.restart_required);
+        assert!(again.message.contains("already installed"));
         assert_eq!(*mock.downloads.lock().unwrap(), 1);
         let first_path = first.clone().unwrap();
         let manifest_path = updater.state_path();
         let manifest = fs::read_to_string(&manifest_path).unwrap();
-        assert!(updater
-            .check(Some(&first_path), &token)
-            .await
-            .unwrap()
-            .contains("No newer Windows engine"));
+        let current = updater.check(Some(&first_path), &token).await.unwrap();
+        assert!(!current.restart_required);
+        assert!(current.message.contains("No newer Windows engine"));
         assert_eq!(*mock.downloads.lock().unwrap(), 1);
         *mock.version.lock().unwrap() = "1.0.4".into();
         assert!(updater
             .check(Some(&first_path), &token)
             .await
             .unwrap()
+            .message
             .contains("No newer Windows engine"));
         for arch in ["x86_64", "aarch64"] {
             let feed = serde_json::to_vec(&vec![
@@ -945,8 +981,11 @@ mod tests {
         ])
         .unwrap()]);
         let msg = updater.check(Some(&first_path), &token).await.unwrap();
-        assert!(msg.contains("No newer Windows engine") && msg.contains("keeping tgrep 1.0.5"));
-        assert!(msg.contains("1.0.6 has no Windows package") && !msg.contains("unavailable"));
+        assert!(!msg.restart_required);
+        assert!(msg.message.contains("No newer Windows engine")
+            && msg.message.contains("keeping tgrep 1.0.5"));
+        assert!(msg.message.contains("1.0.6 has no Windows package")
+            && !msg.message.contains("unavailable"));
         assert_eq!(*mock.downloads.lock().unwrap(), 1);
         assert_eq!(fs::read_to_string(&manifest_path).unwrap(), manifest);
         *mock.version.lock().unwrap() = "1.0.7".into();
@@ -964,30 +1003,36 @@ mod tests {
         let paged_dir = root.path().join("paged").join("x86_64");
         let paged = Updater::new(paged_dir, "x86_64".into(), mock.clone(), |_| {});
         let msg = paged.check(Some(&first_path), &token).await.unwrap();
-        assert!(msg.contains("1.0.7 verified and ready") && msg.contains("Restart the app"));
+        assert!(msg.restart_required);
+        assert!(msg.message.contains("1.0.7 verified and ready")
+            && msg.message.contains("Restart the app"));
         assert_eq!(fs::read_to_string(&first_path).unwrap(), "1.0.5");
         *mock.feed_pages.lock().unwrap() = None;
         *mock.version.lock().unwrap() = "1.0.6".into();
         *mock.bad_hash.lock().unwrap() = true;
         let before = *mock.probes.lock().unwrap();
         let msg = updater.check(Some(&first_path), &token).await.unwrap();
-        assert!(msg.contains("checksum mismatch"));
+        assert!(!msg.restart_required);
+        assert!(msg.message.contains("checksum mismatch"));
         assert_eq!(*mock.probes.lock().unwrap(), before);
         assert_eq!(fs::read_to_string(&manifest_path).unwrap(), manifest);
         *mock.bad_hash.lock().unwrap() = false;
         *mock.reject.lock().unwrap() = true;
         let msg = updater.check(Some(&first_path), &token).await.unwrap();
-        assert!(msg.contains("incompatible protocol"));
+        assert!(!msg.restart_required);
+        assert!(msg.message.contains("incompatible protocol"));
         assert_eq!(fs::read_to_string(&manifest_path).unwrap(), manifest);
         *mock.reject.lock().unwrap() = false;
         *mock.reject_migration.lock().unwrap() = true;
         let msg = updater.check(Some(&first_path), &token).await.unwrap();
-        assert!(msg.contains("incompatible index"));
+        assert!(!msg.restart_required);
+        assert!(msg.message.contains("incompatible index"));
         assert_eq!(fs::read_to_string(&manifest_path).unwrap(), manifest);
         *mock.reject_migration.lock().unwrap() = false;
         *mock.offline.lock().unwrap() = true;
         let msg = updater.check(Some(&first_path), &token).await.unwrap();
-        assert!(msg.contains("keeping the current engine"));
+        assert!(!msg.restart_required);
+        assert!(msg.message.contains("keeping the current engine"));
         assert_eq!(updater.resolve(None).await.as_deref(), Some(first_path.as_str()));
         *mock.offline.lock().unwrap() = false;
         *mock.prerelease.lock().unwrap() = true;
@@ -996,6 +1041,7 @@ mod tests {
             .check(Some(&first_path), &token)
             .await
             .unwrap()
+            .message
             .contains("No newer Windows engine"));
         assert_eq!(*mock.probes.lock().unwrap(), before);
         *mock.prerelease.lock().unwrap() = false;
@@ -1009,9 +1055,10 @@ mod tests {
             *mock.wrong_entry.lock().unwrap() = flag == "entry";
             let before = *mock.probes.lock().unwrap();
             let msg = updater.check(Some(&first_path), &token).await.unwrap();
+            assert!(!msg.restart_required);
             assert!(
-                msg.contains("keeping the current engine") || msg.contains(needle),
-                "{flag}: {msg}"
+                msg.message.contains("keeping the current engine") || msg.message.contains(needle),
+                "{flag}: {msg:?}"
             );
             assert_eq!(*mock.probes.lock().unwrap(), before, "{flag}");
             assert_eq!(fs::read_to_string(&manifest_path).unwrap(), manifest);
@@ -1025,6 +1072,7 @@ mod tests {
                 .check(Some(&first_path), &token)
                 .await
                 .unwrap()
+                .message
                 .contains("Another app instance"));
         }
         let cancelled = CancellationToken::new();

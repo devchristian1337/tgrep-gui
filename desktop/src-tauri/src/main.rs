@@ -12,7 +12,7 @@ use std::{
 };
 use tauri::{ipc::Channel, Manager, State};
 use tokio_util::sync::CancellationToken;
-use updater::{LiveHooks, LiveUpdater};
+use updater::{LiveHooks, LiveUpdater, UpdateStatus};
 
 struct AppState {
     engine: Arc<Engine>,
@@ -34,9 +34,6 @@ fn load_settings(state: State<AppState>) -> Result<Settings> {
 }
 #[tauri::command]
 fn save_settings(state: State<AppState>, mut settings: Settings) -> Result<()> {
-    if !settings.scale.is_finite() || !(0.75..=1.5).contains(&settings.scale) {
-        return Err("Interface scale must be between 75% and 150%.".into());
-    }
     settings.recent_folders.truncate(12);
     if let Some(token) = state.update_token.lock().unwrap().take() {
         token.cancel();
@@ -103,6 +100,25 @@ async fn restart_server(state: State<'_, AppState>) -> Result<()> {
     result
 }
 #[tauri::command]
+fn set_zoom(window: tauri::WebviewWindow, factor: f64) -> Result<()> {
+    if !factor.is_finite() || !(0.5..=2.0).contains(&factor) {
+        return Err("Zoom must be between 50% and 200%.".into());
+    }
+    window.set_zoom(factor).map_err(|e| e.to_string())
+}
+#[tauri::command]
+fn restart_app(app: tauri::AppHandle, state: State<AppState>) -> Result<()> {
+    if state.engine.active.lock().unwrap().is_some() {
+        return Err("Wait for the current operation to finish.".into());
+    }
+    if let Some(token) = state.update_token.lock().unwrap().take() {
+        token.cancel();
+    }
+    // Deliver Exit so the existing shutdown hook can stop our owned server.
+    app.request_restart();
+    Ok(())
+}
+#[tauri::command]
 fn get_logs(state: State<AppState>) -> Vec<String> {
     state.engine.logs.lock().unwrap().clone()
 }
@@ -126,7 +142,7 @@ async fn engine_version(state: State<'_, AppState>, settings: Settings) -> Resul
     Ok(String::from_utf8_lossy(&out.stdout).trim().into())
 }
 #[tauri::command]
-async fn check_engine_update(state: State<'_, AppState>, settings: Settings) -> Result<String> {
+async fn check_engine_update(state: State<'_, AppState>, settings: Settings) -> Result<UpdateStatus> {
     if !settings.engine_path.trim().is_empty() {
         return Ok("A custom engine path is configured. Clear it and save settings to use managed updates.".into());
     }
@@ -139,7 +155,7 @@ async fn check_engine_update(state: State<'_, AppState>, settings: Settings) -> 
     let token = CancellationToken::new();
     *state.update_token.lock().unwrap() = Some(token.clone());
     let msg = state.updater.check(active.as_deref(), &token).await?;
-    state.engine.log(msg.clone());
+    state.engine.log(msg.message.clone());
     Ok(msg)
 }
 async fn pin_session(state: &State<'_, AppState>, settings: &Settings) {
@@ -248,6 +264,8 @@ fn main() {
             cancel_search,
             preview,
             restart_server,
+            restart_app,
+            set_zoom,
             get_logs,
             engine_version,
             check_engine_update,

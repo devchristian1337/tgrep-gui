@@ -1,3 +1,5 @@
+import { mergeShortcuts, type Shortcuts } from "./shortcuts";
+export type { Keybind, ShortcutId, Shortcuts } from "./shortcuts";
 export interface Settings {
   enginePath: string;
   indexPath: string;
@@ -5,12 +7,12 @@ export interface Settings {
   editorArguments: string;
   theme: string;
   accent: string;
-  scale: number;
   density: string;
   ignoreCase: boolean;
   literal: boolean;
   recentFolders: string[];
   autoUpdateEngine: boolean;
+  shortcuts: Shortcuts;
 }
 export interface SearchOptions {
   folder: string;
@@ -21,6 +23,10 @@ export interface SearchOptions {
   literal: boolean;
   wholeWord: boolean;
   useIndex: boolean;
+}
+export interface EngineUpdate {
+  message: string;
+  restartRequired: boolean;
 }
 export interface Hit {
   path: string;
@@ -54,13 +60,21 @@ export const defaults: Settings = {
   editorArguments: '"$FILE"',
   theme: "system",
   accent: "cobalt",
-  scale: 1,
   density: "comfortable",
   ignoreCase: true,
   literal: false,
   recentFolders: [],
   autoUpdateEngine: true,
+  shortcuts: mergeShortcuts(),
 };
+export function normalizeSettings(raw: Partial<Settings>): Settings {
+  return {
+    ...defaults,
+    ...raw,
+    recentFolders: raw.recentFolders ?? defaults.recentFolders,
+    shortcuts: mergeShortcuts(raw.shortcuts),
+  };
+}
 export const emptyOptions: SearchOptions = {
   folder: "",
   pattern: "",

@@ -24,7 +24,9 @@ A configured `tgrep.exe` path in Settings takes precedence over a verified updat
 4. Enter a regex, or enable **Literal text**, then press **Search** or Enter.
 5. Pick a file on the left. The right pane loads that file’s highlighted lines (up to 10,000 matches per file).
 
-| Shortcut | Action |
+Shortcuts can be changed in **Settings**: click a shortcut, then press the new key combination.
+
+| Default shortcut | Action |
 |---|---|
 | Ctrl+L | Show search and select the query text |
 | Enter, in the search box | Start search |
@@ -51,7 +53,7 @@ Search display is bounded at 100,000 files. The file list streams as JSON record
 
 Settings are stored at `%AppData%\io.github.devchristian1337.tgrep-studio\settings.json` and written atomically. If the file is unreadable it is preserved until you save settings explicitly.
 
-Leave **tgrep executable** empty to use a verified update, then PATH. **Update tgrep** checks GitHub for a newer stable Windows build, verifies it, and installs it for the next launch. Automatic updates are on by default and skip a custom engine path. A custom index path must be **absolute and dedicated to a single folder**. Theme can follow the system or be forced light/dark; four accents and 75–150% text scale are available.
+Leave **tgrep executable** empty to use a verified update, then PATH. **Update tgrep** checks GitHub for a newer stable Windows build, verifies it, and installs it for the next launch. Automatic updates are on by default and skip a custom engine path. A custom index path must be **absolute and dedicated to a single folder**. Theme can follow the system or be forced light/dark; four accents are available. Zoom with Ctrl + / Ctrl - / Ctrl 0, or change any shortcut in Settings.
 
 To open at the exact line, set the editor `.exe` path:
 

@@ -8,7 +8,7 @@ body {
   overflow-x: clip;
 }
 html {
-  font-size: calc(14px * var(--ui-scale));
+  font-size: 14px;
 }
 body {
   font-family: var(--font-body);
@@ -130,7 +130,7 @@ kbd {
 .app-shell {
   display: grid;
   grid-template-columns: 208px minmax(0, 1fr);
-  height: 100dvh;
+  height: calc(100dvh / var(--preview-zoom, 1));
   min-height: 560px;
 }
 .sidebar {
@@ -842,19 +842,39 @@ main {
 .swatch[aria-pressed="true"] {
   outline: 2px solid var(--color-accent);
 }
-.scale-control {
+.shortcuts-list {
+  margin: 0;
+}
+.shortcuts-list > div {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  gap: 12px 24px;
+  padding: 12px 0;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--color-rule);
 }
-.scale-control input {
-  width: 140px;
-  accent-color: var(--color-accent);
-  padding: 0;
+.shortcuts-list dt {
+  font-size: 0.9rem;
 }
-.scale-control output {
-  font: var(--text-sm) var(--font-mono);
-  width: 42px;
+.shortcuts-list dd {
+  margin: 0;
+}
+.shortcuts-list kbd {
+  white-space: nowrap;
+}
+.shortcut-bind {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  min-width: 9.5rem;
+  white-space: nowrap;
+}
+.shortcut-bind[aria-pressed="true"] {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.shortcuts-list + .text-button {
+  margin-top: 12px;
 }
 .setting-field {
   display: flex;
@@ -1034,7 +1054,7 @@ main {
     display: flex;
     flex-direction: column;
     height: auto;
-    min-height: 100dvh;
+    min-height: calc(100dvh / var(--preview-zoom, 1));
   }
   .sidebar {
     flex-direction: row;

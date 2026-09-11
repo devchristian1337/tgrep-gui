@@ -18,14 +18,17 @@ import { api, native } from "./api";
 import {
   defaults,
   emptyOptions,
+  normalizeSettings,
   type Settings as Preferences,
   type SearchOptions,
   type Hit,
   type Preview,
   type Outcome,
+  type EngineUpdate,
 } from "./types";
 import Settings from "./Settings";
 import { FileList, CodePreview } from "./Results";
+import { formatShortcut, matches } from "./shortcuts";
 
 export default function App() {
   const [page, setPage] = useState<"search" | "settings">("search");
@@ -49,6 +52,13 @@ export default function App() {
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [version, setVersion] = useState("Checking engine…");
   const [engineUpdate, setEngineUpdate] = useState("");
+  const [restartRequired, setRestartRequired] = useState(false);
+  const zoom = useRef(1);
+  const receiveEngineUpdate = (update: EngineUpdate) => {
+    setEngineUpdate(update.message);
+    // A later failed check must not hide an update already ready to use.
+    if (update.restartRequired) setRestartRequired(true);
+  };
   const query = useRef<HTMLInputElement>(null);
   const logDialog = useRef<HTMLDialogElement>(null);
   const [logs, setLogs] = useState<string[]>([]);
@@ -63,7 +73,7 @@ export default function App() {
     let live = true;
     (async () => {
       try {
-        const s = await api.settings();
+        const s = normalizeSettings(await api.settings());
         const prefill = await api.prefill();
         if (live) {
           setSettings(s);
@@ -98,7 +108,6 @@ export default function App() {
             : "light"
           : settings.theme;
       root.dataset.accent = settings.accent;
-      root.style.setProperty("--ui-scale", String(settings.scale));
     };
     apply();
     media.addEventListener("change", apply);
@@ -125,10 +134,12 @@ export default function App() {
   useEffect(() => {
     if (!ready || !native || !settingsReadable.current) return;
     if (!settings.autoUpdateEngine || settings.enginePath.trim()) {
-      if (settings.enginePath.trim())
+      if (settings.enginePath.trim()) {
+        setRestartRequired(false);
         setEngineUpdate(
           "A custom engine path is configured. Clear it and save settings to use managed updates.",
         );
+      }
       return;
     }
     let live = true;
@@ -136,7 +147,7 @@ export default function App() {
     api
       .checkEngine(settings)
       .then((status) => {
-        if (live) setEngineUpdate(status);
+        if (live) receiveEngineUpdate(status);
       })
       .catch((e) => {
         if (live) setEngineUpdate(String(e));
@@ -147,21 +158,55 @@ export default function App() {
   }, [ready, settings.autoUpdateEngine, settings.enginePath]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "l") {
+      if ((e.target as HTMLElement | null)?.closest("[data-shortcut-capture]"))
+        return;
+      const sc = settings.shortcuts;
+      const zoomDir = matches(sc.zoomIn, e)
+        ? 1
+        : matches(sc.zoomOut, e)
+          ? -1
+          : matches(sc.zoomReset, e)
+            ? 0
+            : null;
+      if (zoomDir !== null) {
+        e.preventDefault();
+        const previous = zoom.current;
+        const next =
+          zoomDir === 0
+            ? 1
+            : Math.max(
+                0.5,
+                Math.min(2, Math.round((previous + zoomDir * 0.1) * 10) / 10),
+              );
+        zoom.current = next;
+        void api.zoom(next).catch((error) => {
+          if (zoom.current === next) zoom.current = previous;
+          setError(`Could not change zoom: ${error}`);
+        });
+        return;
+      }
+      if (matches(sc.focusSearch, e)) {
         e.preventDefault();
         setPage("search");
         setTimeout(() => {
           query.current?.focus();
           query.current?.select();
         }, 0);
+        return;
       }
-      if (e.key === "Escape" && running.current) {
-        void api.cancel().catch((e) => setError(String(e)));
+      if (matches(sc.cancel, e)) {
+        if (logDialog.current?.open) {
+          e.preventDefault();
+          logDialog.current.close();
+        } else if (running.current) {
+          e.preventDefault();
+          void api.cancel().catch((err) => setError(String(err)));
+        }
       }
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, []);
+  }, [settings.shortcuts]);
   useEffect(() => {
     if (!logDialog.current?.open) return;
     const timer = setInterval(() => {
@@ -317,10 +362,15 @@ export default function App() {
     }
   };
   const save = async (s: Preferences) => {
-    await api.save(s);
+    const next = normalizeSettings(s);
+    await api.save(next);
     settingsReadable.current = true;
-    setSettings(s);
-    setOptions((o) => ({ ...o, ignoreCase: s.ignoreCase, literal: s.literal }));
+    setSettings(next);
+    setOptions((o) => ({
+      ...o,
+      ignoreCase: next.ignoreCase,
+      literal: next.literal,
+    }));
   };
   return (
     <div className="app-shell">
@@ -409,7 +459,8 @@ export default function App() {
               setTimeout(() => query.current?.focus(), 0);
             }}
           >
-            Quick search <kbd>Ctrl L</kbd>
+            Quick search{" "}
+            <kbd>{formatShortcut(settings.shortcuts.focusSearch)}</kbd>
           </button>
         </header>
         {error && (
@@ -437,6 +488,8 @@ export default function App() {
             busy={busy}
             version={version}
             updateStatus={engineUpdate}
+            restartRequired={restartRequired}
+            onUpdateResult={receiveEngineUpdate}
             onUpdateStatus={setEngineUpdate}
           />
         ) : (
@@ -622,6 +675,7 @@ export default function App() {
                 onSelect={(p) => void select(p)}
                 busy={busy}
                 dense={settings.density === "compact"}
+                shortcuts={settings.shortcuts}
               />
               <div
                 className="splitter"
@@ -671,6 +725,7 @@ export default function App() {
                 onOpen={(l) => void open(l)}
                 onFolder={() => void open(1, true)}
                 onCopy={copy}
+                shortcuts={settings.shortcuts}
               />
             </div>
           </div>

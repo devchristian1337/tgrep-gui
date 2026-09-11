@@ -1,4 +1,18 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+#[derive(Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Keybind {
+    #[serde(default)]
+    pub key: String,
+    #[serde(default)]
+    pub ctrl: bool,
+    #[serde(default)]
+    pub shift: bool,
+    #[serde(default)]
+    pub alt: bool,
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -9,13 +23,14 @@ pub struct Settings {
     pub editor_arguments: String,
     pub theme: String,
     pub accent: String,
-    pub scale: f64,
     pub density: String,
     pub ignore_case: bool,
     pub literal: bool,
     pub recent_folders: Vec<String>,
     #[serde(default = "default_auto_update")]
     pub auto_update_engine: bool,
+    #[serde(default)]
+    pub shortcuts: BTreeMap<String, Keybind>,
 }
 fn default_auto_update() -> bool {
     true
@@ -29,12 +44,12 @@ impl Default for Settings {
             editor_arguments: "\"$FILE\"".into(),
             theme: "system".into(),
             accent: "cobalt".into(),
-            scale: 1.0,
             density: "comfortable".into(),
             ignore_case: true,
             literal: false,
             recent_folders: vec![],
             auto_update_engine: true,
+            shortcuts: BTreeMap::new(),
         }
     }
 }

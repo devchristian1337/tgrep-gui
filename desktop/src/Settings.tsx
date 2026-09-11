@@ -1,7 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, FolderOpen, Monitor, Sun, Moon, RefreshCw } from "lucide-react";
-import type { Settings as Preferences } from "./types";
+import type { Settings as Preferences, EngineUpdate } from "./types";
 import { api, native } from "./api";
+import {
+  bindsConflict,
+  formatShortcut,
+  fromEvent,
+  isAllowed,
+  mergeShortcuts,
+  shortcutActions,
+  type ShortcutId,
+} from "./shortcuts";
 export default function Settings({
   value,
   onSave,
@@ -9,6 +18,8 @@ export default function Settings({
   version,
   updateStatus,
   onUpdateStatus,
+  onUpdateResult,
+  restartRequired,
 }: {
   value: Preferences;
   onSave: (s: Preferences) => Promise<void>;
@@ -16,16 +27,56 @@ export default function Settings({
   version: string;
   updateStatus: string;
   onUpdateStatus: (status: string) => void;
+  onUpdateResult: (update: EngineUpdate) => void;
+  restartRequired: boolean;
 }) {
-  const [draft, setDraft] = useState(value);
+  const [draft, setDraft] = useState(() => ({
+    ...value,
+    shortcuts: mergeShortcuts(value.shortcuts),
+  }));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [updating, setUpdating] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [recording, setRecording] = useState<ShortcutId | null>(null);
   const set = <K extends keyof Preferences>(key: K, v: Preferences[K]) => {
     setDraft((d) => ({ ...d, [key]: v }));
     setSaved(false);
   };
+  useEffect(() => {
+    if (busy || saving || restarting) setRecording(null);
+  }, [busy, saving, restarting]);
+  useEffect(() => {
+    if (!recording) return;
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === "Escape") {
+        setRecording(null);
+        return;
+      }
+      const bind = fromEvent(e);
+      if (!bind) return;
+      if (!isAllowed(bind)) {
+        setError("Add Ctrl or Alt, or use a function key.");
+        return;
+      }
+      const conflict = shortcutActions.find(
+        ({ id }) =>
+          id !== recording && bindsConflict(draft.shortcuts[id], bind),
+      );
+      if (conflict) {
+        setError(`That combination is already used by ${conflict.label}.`);
+        return;
+      }
+      set("shortcuts", { ...draft.shortcuts, [recording]: bind });
+      setRecording(null);
+      setError("");
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [recording, draft.shortcuts]);
   const browse = async (key: "enginePath" | "editorPath" | "indexPath") => {
     try {
       const path = await api.browse(key === "indexPath");
@@ -56,7 +107,7 @@ export default function Settings({
           }
         }}
       >
-        <fieldset disabled={busy || saving}>
+        <fieldset disabled={busy || saving || restarting}>
           <legend>Appearance</legend>
           <div className="setting-row">
             <div>
@@ -103,24 +154,6 @@ export default function Settings({
           </div>
           <div className="setting-row">
             <div>
-              <strong>Interface size</strong>
-              <p>Scale text across the entire app.</p>
-            </div>
-            <label className="scale-control">
-              <input
-                aria-label="Interface size"
-                type="range"
-                min="0.75"
-                max="1.5"
-                step="0.05"
-                value={draft.scale}
-                onChange={(e) => set("scale", Number(e.target.value))}
-              />
-              <output>{Math.round(draft.scale * 100)}%</output>
-            </label>
-          </div>
-          <div className="setting-row">
-            <div>
               <strong>Result density</strong>
               <p>More breathing room, or more files at a glance.</p>
             </div>
@@ -134,7 +167,7 @@ export default function Settings({
             </select>
           </div>
         </fieldset>
-        <fieldset disabled={busy || saving}>
+        <fieldset disabled={busy || saving || restarting}>
           <legend>Search engine</legend>
           <div className="setting-row">
             <div>
@@ -149,16 +182,14 @@ export default function Settings({
             </div>
             <button
               type="button"
-              disabled={
-                !native || updating || Boolean(draft.enginePath.trim())
-              }
+              disabled={!native || updating || Boolean(draft.enginePath.trim())}
               aria-label="Update tgrep"
               title="Check GitHub for a newer official tgrep and install it for the next launch"
               onClick={async () => {
                 setUpdating(true);
                 onUpdateStatus("Checking for tgrep updates…");
                 try {
-                  onUpdateStatus(await api.checkEngine(draft));
+                  onUpdateResult(await api.checkEngine(draft));
                 } catch (e) {
                   onUpdateStatus(String(e));
                 } finally {
@@ -174,6 +205,27 @@ export default function Settings({
             <p className="fieldset-note" role="status">
               {updateStatus}
             </p>
+          )}
+          {restartRequired && !draft.enginePath.trim() && (
+            <button
+              type="button"
+              className="small-button"
+              disabled={!native || updating || restarting}
+              onClick={async () => {
+                setRestarting(true);
+                setError("");
+                try {
+                  await onSave(draft);
+                  await api.restartApp();
+                } catch (e) {
+                  setError(String(e));
+                  setRestarting(false);
+                }
+              }}
+            >
+              <RefreshCw size={16} className={restarting ? "spin" : ""} />
+              {restarting ? "Restarting…" : "Restart app"}
+            </button>
           )}
           <label className="setting-check">
             <input
@@ -257,6 +309,46 @@ export default function Settings({
             </div>
           </div>
         </fieldset>
+        <fieldset disabled={busy || saving || restarting}>
+          <legend>Shortcuts</legend>
+          <p className="fieldset-note">
+            Click a shortcut, then press the new keys. Esc cancels editing.
+          </p>
+          <dl className="shortcuts-list">
+            {shortcutActions.map(({ id, label }) => (
+              <div key={id}>
+                <dt>{label}</dt>
+                <dd>
+                  <button
+                    type="button"
+                    className="shortcut-bind"
+                    data-shortcut-capture=""
+                    aria-label={`${label} shortcut`}
+                    aria-pressed={recording === id}
+                    onClick={() =>
+                      setRecording((current) => (current === id ? null : id))
+                    }
+                  >
+                    {recording === id
+                      ? "Press keys…"
+                      : formatShortcut(draft.shortcuts[id])}
+                  </button>
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => {
+              set("shortcuts", mergeShortcuts());
+              setRecording(null);
+              setError("");
+            }}
+          >
+            Reset shortcuts
+          </button>
+        </fieldset>
         {error && (
           <p role="alert" className="error-inline">
             {error}
@@ -270,7 +362,11 @@ export default function Settings({
                 ? "Settings are locked while searching."
                 : ""}
           </span>
-          <button className="primary" disabled={busy || saving} type="submit">
+          <button
+            className="primary"
+            disabled={busy || saving || restarting}
+            type="submit"
+          >
             {saved ? (
               <>
                 <Check size={16} />

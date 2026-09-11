@@ -7,6 +7,7 @@ import {
   type SearchEvent,
   type Outcome,
   type Preview,
+  type EngineUpdate,
 } from "./types";
 export const native = isTauri();
 export const api = {
@@ -36,8 +37,11 @@ export const api = {
       : Promise.resolve("Browser preview"),
   checkEngine: (settings: Settings) =>
     native
-      ? invoke<string>("check_engine_update", { settings })
-      : Promise.resolve("Engine updates run in the desktop app."),
+      ? invoke<EngineUpdate>("check_engine_update", { settings })
+      : Promise.resolve({
+          message: "Engine updates run in the desktop app.",
+          restartRequired: false,
+        }),
   browse: (directory: boolean) => open({ directory, multiple: false }),
   search: (
     id: number,
@@ -53,6 +57,16 @@ export const api = {
   preview: (path: string) => invoke<Preview>("preview", { path }),
   logs: () => (native ? invoke<string[]>("get_logs") : Promise.resolve([])),
   restart: () => invoke<void>("restart_server"),
+  restartApp: () => invoke<void>("restart_app"),
+  zoom: (factor: number) => {
+    if (native) return invoke<void>("set_zoom", { factor });
+    document.documentElement.style.zoom = String(factor);
+    document.documentElement.style.setProperty(
+      "--preview-zoom",
+      String(factor),
+    );
+    return Promise.resolve();
+  },
   open: (
     path: string,
     line: number,

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   FileCode2,
@@ -8,7 +8,8 @@ import {
   FolderOpen,
   Check,
 } from "lucide-react";
-import type { Hit, Preview, MatchLine } from "./types";
+import type { Hit, Preview, MatchLine, Shortcuts } from "./types";
+import { formatParts, formatShortcut, matches } from "./shortcuts";
 export function Highlight({ line }: { line: MatchLine }) {
   const pieces = [];
   let offset = 0;
@@ -29,12 +30,14 @@ export function FileList({
   onSelect,
   busy,
   dense,
+  shortcuts,
 }: {
   hits: Hit[];
   selected: string;
   onSelect: (p: string) => void;
   busy: boolean;
   dense: boolean;
+  shortcuts: Shortcuts;
 }) {
   const [filter, setFilter] = useState("");
   const parent = useRef<HTMLDivElement>(null);
@@ -71,28 +74,22 @@ export function FileList({
         ref={parent}
         aria-busy={busy}
         tabIndex={0}
-        aria-label="Files. Use arrow keys to select a result."
+        aria-label="Files. Keyboard shortcuts move the selection."
         onKeyDown={(e) => {
-          if (
-            busy ||
-            !filtered.length ||
-            !["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)
-          )
-            return;
-          e.preventDefault();
+          if (busy || !filtered.length) return;
           const current = filtered.findIndex((h) => h.path === selected);
-          const next =
-            e.key === "Home"
-              ? 0
-              : e.key === "End"
-                ? filtered.length - 1
-                : Math.max(
-                    0,
-                    Math.min(
-                      filtered.length - 1,
-                      current + (e.key === "ArrowDown" ? 1 : -1),
-                    ),
-                  );
+          const next = matches(shortcuts.moveFirst, e, { ignoreShift: true })
+            ? 0
+            : matches(shortcuts.moveLast, e, { ignoreShift: true })
+              ? filtered.length - 1
+              : matches(shortcuts.moveDown, e, { ignoreShift: true })
+                ? Math.max(0, Math.min(filtered.length - 1, current + 1))
+                : matches(shortcuts.moveUp, e, { ignoreShift: true })
+                  ? Math.max(0, Math.min(filtered.length - 1, current - 1))
+                  : null;
+          if (next === null) return;
+          e.preventDefault();
+          e.stopPropagation();
           virtual.scrollToIndex(next);
           onSelect(filtered[next].path);
         }}
@@ -149,6 +146,7 @@ export function CodePreview({
   onOpen,
   onFolder,
   onCopy,
+  shortcuts,
 }: {
   hit?: Hit;
   preview: Preview | null;
@@ -157,6 +155,7 @@ export function CodePreview({
   onOpen: (line: number) => void;
   onFolder: () => void;
   onCopy: (text: string) => Promise<boolean>;
+  shortcuts: Shortcuts;
 }) {
   const parent = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
@@ -236,9 +235,12 @@ export function CodePreview({
             and find the line that matters.
           </p>
           <div className="keyboard-hint">
-            <kbd>Ctrl</kbd>
-            <span>+</span>
-            <kbd>L</kbd>
+            {formatParts(shortcuts.focusSearch).map((part, i) => (
+              <Fragment key={`${part}-${i}`}>
+                {i > 0 && <span>+</span>}
+                <kbd>{part}</kbd>
+              </Fragment>
+            ))}
             <span>to focus search</span>
           </div>
         </div>
@@ -260,27 +262,10 @@ export function CodePreview({
             className="code-scroll"
             ref={parent}
             tabIndex={0}
-            aria-label="Code preview. Control C copies selected lines; F3 opens the editor."
+            aria-label={`Code preview. ${formatShortcut(shortcuts.selectAll)} selects all lines; ${formatShortcut(shortcuts.copy)} copies selected lines; ${formatShortcut(shortcuts.openEditor)} opens the editor.`}
             onKeyDown={(e) => {
-              if (
-                lines.length &&
-                ["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)
-              ) {
-                e.preventDefault();
-                const current = chosen.at(-1) ?? -1;
-                const next =
-                  e.key === "Home"
-                    ? 0
-                    : e.key === "End"
-                      ? lines.length - 1
-                      : Math.max(
-                          0,
-                          Math.min(
-                            lines.length - 1,
-                            current + (e.key === "ArrowDown" ? 1 : -1),
-                          ),
-                        );
-                if (e.shiftKey) {
+              const go = (next: number, extend: boolean) => {
+                if (extend) {
                   setChosen(
                     Array.from(
                       { length: Math.abs(next - anchor.current) + 1 },
@@ -292,15 +277,53 @@ export function CodePreview({
                   anchor.current = next;
                 }
                 virtual.scrollToIndex(next);
-              }
-              if ((e.ctrlKey || e.metaKey) && e.key === "c" && chosen.length) {
+              };
+              if (matches(shortcuts.selectAll, e)) {
                 e.preventDefault();
+                e.stopPropagation();
+                setChosen(lines.map((_, index) => index));
+                anchor.current = 0;
+                return;
+              }
+              if (matches(shortcuts.copy, e) && chosen.length) {
+                e.preventDefault();
+                e.stopPropagation();
                 void copyLines();
+                return;
               }
-              if (e.key === "F3") {
+              if (matches(shortcuts.openEditor, e)) {
                 e.preventDefault();
+                e.stopPropagation();
                 onOpen(lines[chosen[0] || 0]?.number || 1);
+                return;
               }
+              if (!lines.length) return;
+              const current = chosen.at(-1) ?? -1;
+              const extendDown =
+                matches(shortcuts.extendDown, e) ||
+                (e.shiftKey &&
+                  !shortcuts.moveDown.shift &&
+                  matches(shortcuts.moveDown, e, { ignoreShift: true }));
+              const extendUp =
+                matches(shortcuts.extendUp, e) ||
+                (e.shiftKey &&
+                  !shortcuts.moveUp.shift &&
+                  matches(shortcuts.moveUp, e, { ignoreShift: true }));
+              const next = matches(shortcuts.moveFirst, e, {
+                ignoreShift: true,
+              })
+                ? 0
+                : matches(shortcuts.moveLast, e, { ignoreShift: true })
+                  ? lines.length - 1
+                  : extendDown || matches(shortcuts.moveDown, e)
+                    ? Math.max(0, Math.min(lines.length - 1, current + 1))
+                    : extendUp || matches(shortcuts.moveUp, e)
+                      ? Math.max(0, Math.min(lines.length - 1, current - 1))
+                      : null;
+              if (next === null) return;
+              e.preventDefault();
+              e.stopPropagation();
+              go(next, extendDown || extendUp || e.shiftKey);
             }}
           >
             <div
