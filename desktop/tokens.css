@@ -1,6 +1,7 @@
 /* Hallmark · macrostructure: application workbench · tone: modern-minimal · anchor hue: cobalt */
 /* Hallmark · pre-emit critique: P4 H4 E4 S4 R5 V4 */
 :root {
+  color-scheme: light;
   --font-display: "Space Grotesk", sans-serif;
   --font-body: "Inter", sans-serif;
   --font-mono: "JetBrains Mono", monospace;

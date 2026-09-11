@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Check, FolderOpen, Monitor, Sun, Moon, RefreshCw } from "lucide-react";
 import type { Settings as Preferences, EngineUpdate } from "./types";
 import { api, native } from "./api";
+import { accentHex } from "./appearance";
+import DensitySelect from "./DensitySelect";
 import {
   bindsConflict,
   formatShortcut,
@@ -136,19 +138,43 @@ export default function Settings({
               <strong>Accent color</strong>
               <p>A little color, exactly where it helps.</p>
             </div>
-            <div className="swatches">
-              {["cobalt", "jade", "amber", "rose"].map((a) => (
-                <button
-                  type="button"
-                  key={a}
-                  data-accent={a}
-                  className="swatch"
-                  aria-label={`${a} accent`}
-                  aria-pressed={draft.accent === a}
-                  onClick={() => set("accent", a)}
-                >
-                  {draft.accent === a && <Check size={16} />}
-                </button>
+            <div className="rgb-picker">
+              <input
+                type="color"
+                aria-label="Accent color"
+                value={accentHex(draft.accent)}
+                onChange={(e) => set("accent", e.target.value)}
+              />
+              {["R", "G", "B"].map((channel, index) => (
+                <label key={channel}>
+                  {channel}
+                  <input
+                    type="number"
+                    min="0"
+                    max="255"
+                    step="1"
+                    required
+                    aria-label={`Accent ${channel}`}
+                    value={parseInt(
+                      accentHex(draft.accent).slice(
+                        1 + index * 2,
+                        3 + index * 2,
+                      ),
+                      16,
+                    )}
+                    onChange={(e) => {
+                      if (!e.target.value || !e.target.validity.valid) return;
+                      const hex = accentHex(draft.accent);
+                      const start = 1 + index * 2;
+                      set(
+                        "accent",
+                        hex.slice(0, start) +
+                          Number(e.target.value).toString(16).padStart(2, "0") +
+                          hex.slice(start + 2),
+                      );
+                    }}
+                  />
+                </label>
               ))}
             </div>
           </div>
@@ -157,14 +183,10 @@ export default function Settings({
               <strong>Result density</strong>
               <p>More breathing room, or more files at a glance.</p>
             </div>
-            <select
-              aria-label="Result density"
+            <DensitySelect
               value={draft.density}
-              onChange={(e) => set("density", e.target.value)}
-            >
-              <option value="comfortable">Comfortable</option>
-              <option value="compact">Compact</option>
-            </select>
+              onChange={(value) => set("density", value)}
+            />
           </div>
         </fieldset>
         <fieldset disabled={busy || saving || restarting}>

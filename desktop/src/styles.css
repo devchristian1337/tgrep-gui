@@ -822,25 +822,81 @@ main {
   background: var(--color-surface);
   border-color: var(--color-control-rule);
 }
-.swatches {
+.rgb-picker {
   display: flex;
-  gap: 10px;
+  align-items: end;
+  gap: 8px;
+  max-width: 100%;
 }
-.swatch {
-  background: var(--color-accent);
-  color: var(--color-accent-ink);
-  width: 32px;
-  min-height: 32px;
-  padding: 5px;
-  border-radius: 50%;
-  border: 3px solid var(--color-surface);
-  outline: 1px solid var(--color-rule);
+.rgb-picker label {
+  display: grid;
+  gap: 5px;
+  color: var(--color-muted);
+  font: var(--text-xs) var(--font-mono);
 }
-.swatch:hover:not(:disabled) {
-  background: var(--color-accent);
+.rgb-picker input[type="number"] {
+  width: 64px;
+  min-width: 0;
+  padding: 8px;
 }
-.swatch[aria-pressed="true"] {
-  outline: 2px solid var(--color-accent);
+.rgb-picker input[type="color"] {
+  width: 44px;
+  height: 40px;
+  padding: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.rgb-picker input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.rgb-picker input[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: 3px;
+}
+.density-select {
+  position: relative;
+  width: 180px;
+}
+.density-select > button {
+  width: 100%;
+  justify-content: space-between;
+}
+.density-options {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 100%;
+  z-index: 20;
+  padding: 4px;
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.14);
+}
+.density-options [role="option"] {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 36px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: var(--text-sm);
+}
+.density-options [aria-selected="true"] {
+  background: var(--color-selection);
+}
+.density-options [data-active="true"] {
+  outline: 1px solid var(--color-control-rule);
+  outline-offset: -1px;
+}
+fieldset:disabled .density-options {
+  display: none;
+}
+@media (max-width: 375px) {
+  .rgb-picker input[type="number"] {
+    width: 54px;
+  }
 }
 .shortcuts-list {
   margin: 0;

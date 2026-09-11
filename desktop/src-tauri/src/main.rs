@@ -107,6 +107,15 @@ fn set_zoom(window: tauri::WebviewWindow, factor: f64) -> Result<()> {
     window.set_zoom(factor).map_err(|e| e.to_string())
 }
 #[tauri::command]
+fn set_theme(window: tauri::WebviewWindow, theme: String) -> Result<()> {
+    let theme = match theme.as_str() {
+        "light" => tauri::Theme::Light,
+        "dark" => tauri::Theme::Dark,
+        _ => return Err("Invalid window theme.".into()),
+    };
+    window.set_theme(Some(theme)).map_err(|e| e.to_string())
+}
+#[tauri::command]
 fn restart_app(app: tauri::AppHandle, state: State<AppState>) -> Result<()> {
     if state.engine.active.lock().unwrap().is_some() {
         return Err("Wait for the current operation to finish.".into());
@@ -266,6 +275,7 @@ fn main() {
             restart_server,
             restart_app,
             set_zoom,
+            set_theme,
             get_logs,
             engine_version,
             check_engine_update,

@@ -58,6 +58,7 @@ async function mockDesktop(
             return;
           }
           if (cmd === "set_zoom") return;
+          if (cmd === "set_theme") return;
           if (cmd === "plugin:dialog|open") return "C:\\projects\\atlas";
           if (cmd === "get_logs") return ["Fixture log: search completed"];
           if (cmd === "open_result") return;
@@ -168,8 +169,8 @@ test("ready engine update exposes an app restart action", async ({ page }) => {
   ).toBe(false);
   const calls = await page.evaluate(() => (window as any).calls);
   const restartIndex = calls.findIndex((c: any) => c.cmd === "restart_app");
-  expect(calls[restartIndex - 1].cmd).toBe("save_settings");
-  expect(calls[restartIndex - 1].args.settings.theme).toBe("dark");
+  const savedBeforeRestart = calls.slice(0, restartIndex).filter((c: any) => c.cmd === "save_settings").at(-1);
+  expect(savedBeforeRestart?.args.settings.theme).toBe("dark");
 });
 test("automatic update keeps restart available across navigation and a failed recheck", async ({
   page,
@@ -565,6 +566,104 @@ test("shortcuts can be recorded, saved, and reset", async ({ page }) => {
   await page.keyboard.press("Control+l");
   await expect(page.getByLabel("Search pattern")).toBeFocused();
 });
+test("White uses light native controls even when the OS is dark", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await mockDesktop(page);
+  await page.goto("/");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(page.locator("html")).toHaveCSS("color-scheme", "light");
+  await expect(page.getByLabel("Literal text", { exact: true })).toHaveCSS(
+    "color-scheme",
+    "light",
+  );
+  await page.evaluate(() => {
+    (window as any).previewLines = Array.from({ length: 100 }, (_, i) => ({
+      number: i + 1,
+      text: `match ${i + 1} ${"long preview line ".repeat(20)}`,
+      spans: [],
+      count: 1,
+    }));
+  });
+  await page.getByLabel("Search pattern").fill("match");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByRole("button", { name: /search.rs/ }).click();
+  await expect(page.locator(".code-line").first()).toBeVisible();
+  await expect(page.locator(".code-scroll")).toHaveCSS("color-scheme", "light");
+  await page.screenshot({ path: "test-results/white-dark-os.png" });
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Dark", exact: true }).click();
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
+});
+
+test("RGB palette, density keyboard menu and native window theme follow saved settings", async ({
+  page,
+}) => {
+  await mockDesktop(page);
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).calls.filter((c: any) => c.cmd === "set_theme").at(-1)
+            ?.args.theme,
+      ),
+    )
+    .toBe("light");
+  await page.getByLabel("Accent color", { exact: true }).fill("#3478ab");
+  await expect(page.getByLabel("Accent R", { exact: true })).toHaveValue("52");
+  await page.getByLabel("Accent R", { exact: true }).fill("120");
+  await expect(page.getByLabel("Accent color", { exact: true })).toHaveValue(
+    "#7878ab",
+  );
+  const combo = page.getByRole("combobox", { name: "Result density" });
+  await combo.click();
+  await expect(page.getByRole("listbox")).toBeVisible();
+  await page.screenshot({ path: "test-results/appearance-light.png" });
+  await combo.press("ArrowDown");
+  await combo.press("Enter");
+  await expect(combo).toHaveText("Compact");
+  await combo.click();
+  await combo.press("Escape");
+  await expect(page.getByRole("listbox")).toBeHidden();
+  await page.getByRole("button", { name: "Dark", exact: true }).click();
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).calls.filter((c: any) => c.cmd === "set_theme").at(-1)
+            ?.args.theme,
+      ),
+    )
+    .toBe("dark");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByLabel("Accent color", { exact: true })).toHaveValue(
+    "#7878ab",
+  );
+  await expect(combo).toHaveText("Compact");
+  await combo.click();
+  await page.screenshot({ path: "test-results/appearance-dark.png" });
+  await page.getByRole("option", { name: "Comfortable" }).click();
+  await page.getByRole("button", { name: "System", exact: true }).click();
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).calls.filter((c: any) => c.cmd === "set_theme").at(-1)
+            ?.args.theme,
+      ),
+    )
+    .toBe("light");
+});
+
 test("settings persist theme and accent, shortcuts and log dialog work", async ({
   page,
 }) => {
@@ -572,10 +671,10 @@ test("settings persist theme and accent, shortcuts and log dialog work", async (
   await page.goto("/");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Dark", exact: true }).click();
-  await page.getByRole("button", { name: "jade accent" }).click();
+  await page.getByLabel("Accent color", { exact: true }).fill("#3478ab");
   await page.getByRole("button", { name: "Save settings" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await expect(page.locator("html")).toHaveAttribute("data-accent", "jade");
+  await expect(page.locator("html")).toHaveAttribute("data-accent", "#3478ab");
   await page.screenshot({ path: "test-results/workbench-settings.png" });
   await page.keyboard.press("Control+l");
   await expect(page.getByLabel("Search pattern")).toBeFocused();

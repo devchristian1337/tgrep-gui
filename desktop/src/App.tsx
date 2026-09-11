@@ -15,6 +15,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { api, native } from "./api";
+import { applyAccent } from "./appearance";
 import {
   defaults,
   emptyOptions,
@@ -108,11 +109,14 @@ export default function App() {
             : "light"
           : settings.theme;
       root.dataset.accent = settings.accent;
+      applyAccent(root, settings.accent);
+      if (ready)
+        void api.theme(root.dataset.theme).catch((e) => setError(String(e)));
     };
     apply();
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
-  }, [settings]);
+  }, [settings, ready]);
   useEffect(() => {
     if (!ready) return;
     let live = true;

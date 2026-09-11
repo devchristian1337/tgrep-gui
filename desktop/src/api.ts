@@ -11,6 +11,8 @@ import {
 } from "./types";
 export const native = isTauri();
 export const api = {
+  theme: (theme: string) =>
+    native ? invoke<void>("set_theme", { theme }) : Promise.resolve(),
   settings: () =>
     native
       ? invoke<Settings>("load_settings")

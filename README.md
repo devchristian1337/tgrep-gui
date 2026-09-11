@@ -53,7 +53,7 @@ Search display is bounded at 100,000 files. The file list streams as JSON record
 
 Settings are stored at `%AppData%\io.github.devchristian1337.tgrep-studio\settings.json` and written atomically. If the file is unreadable it is preserved until you save settings explicitly.
 
-Leave **tgrep executable** empty to use a verified update, then PATH. **Update tgrep** checks GitHub for a newer stable Windows build, verifies it, and installs it for the next launch. Automatic updates are on by default and skip a custom engine path. A custom index path must be **absolute and dedicated to a single folder**. Theme can follow the system or be forced light/dark; four accents are available. Zoom with Ctrl + / Ctrl - / Ctrl 0, or change any shortcut in Settings.
+Leave **tgrep executable** empty to use a verified update, then PATH. **Update tgrep** checks GitHub for a newer stable Windows build, verifies it, and installs it for the next launch. Automatic updates are on by default and skip a custom engine path. A custom index path must be **absolute and dedicated to a single folder**. Theme can follow the system or be forced light/dark, including the window title bar. Choose any accent with the color picker or enter precise R, G, B values (0–255). Apply appearance changes with **Save settings**. Zoom with Ctrl + / Ctrl - / Ctrl 0, or change any shortcut in Settings.
 
 To open at the exact line, set the editor `.exe` path:
 
