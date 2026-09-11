@@ -18,6 +18,7 @@ async function mockDesktop(page: Page) {
       ignoreCase: true,
       literal: false,
       recentFolders: ["C:\\projects\\atlas"],
+      autoUpdateEngine: true,
     };
     const callbacks = new Map();
     let seq = 0;
@@ -37,6 +38,8 @@ async function mockDesktop(page: Page) {
         }
         if (cmd === "get_prefill") return {};
         if (cmd === "engine_version") return "tgrep 1.0.5";
+        if (cmd === "check_engine_update")
+          return "No newer Windows engine is available; keeping tgrep 1.0.5.";
         if (cmd === "plugin:dialog|open") return "C:\\projects\\atlas";
         if (cmd === "get_logs") return ["Fixture log: search completed"];
         if (cmd === "open_result") return;
@@ -125,6 +128,52 @@ test("folder field focus rings the shell instead of the inner input", async ({
   await expect(shell).not.toHaveCSS("box-shadow", "none");
   await page.screenshot({ path: "test-results/workbench-folder-focus.png" });
 });
+test("right-click on the workbench does not keep the browser context menu", async ({
+  page,
+}) => {
+  await mockDesktop(page);
+  await page.goto("/");
+  const onPage = await page.evaluate(
+    () =>
+      new Promise<boolean>((resolve) => {
+        window.addEventListener(
+          "contextmenu",
+          (event) => resolve(event.defaultPrevented),
+          { once: true },
+        );
+        document.querySelector("h1")?.dispatchEvent(
+          new MouseEvent("contextmenu", {
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      }),
+  );
+  expect(onPage).toBe(true);
+  const onQuery = await page.evaluate(() => {
+    const input = document.querySelector(
+      '[aria-label="Search pattern"]',
+    ) as HTMLInputElement;
+    const event = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+    });
+    input.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(onQuery).toBe(false);
+  const reloadBlocked = await page.evaluate(() => {
+    const event = new KeyboardEvent("keydown", {
+      key: "r",
+      ctrlKey: true,
+      cancelable: true,
+      bubbles: true,
+    });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(reloadBlocked).toBe(true);
+});
 test("browser preview is honest and validates input", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("Interface preview ·")).toBeVisible();
@@ -184,6 +233,19 @@ test("cancellation retains partial results and errors recover", async ({
   await page.getByLabel("Search pattern").fill("absent");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page.locator(".statusbar")).toContainText("No matches");
+});
+test("settings can check for a tgrep engine update", async ({ page }) => {
+  await mockDesktop(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByText("tgrep 1.0.5 · in use")).toBeVisible();
+  const update = page.getByRole("button", { name: "Update tgrep" });
+  await expect(update).toBeEnabled();
+  await expect(page.getByLabel("Automatically update tgrep")).toBeChecked();
+  await update.click();
+  await expect(
+    page.getByText("No newer Windows engine is available; keeping tgrep 1.0.5."),
+  ).toBeVisible();
 });
 test("settings persist theme and accent, shortcuts and log dialog work", async ({
   page,

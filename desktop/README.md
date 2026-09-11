@@ -19,7 +19,7 @@ npm ci
 npm run tauri -- dev
 ```
 
-Release builds bundle `tgrep.exe` next to `tgrep-gui.exe`. Debug builds also look in `../.tools/tgrep/`. A configured path in Settings takes precedence, then PATH.
+The app does not ship `tgrep.exe`. Settings → **Update tgrep** installs a verified Microsoft build under `%LOCALAPPDATA%\tgrep-gui\engines`. Debug builds also look in `../.tools/tgrep/`, then PATH. A configured path in Settings takes precedence.
 
 To inspect just the interface:
 
@@ -33,7 +33,7 @@ Open `http://127.0.0.1:1420`. Browser mode is labelled and does not search local
 
 - `src/` React workbench (`App.tsx`, `Results.tsx`, `Settings.tsx`)
 - `tokens.css` / `src/styles.css` palette and layout
-- `src-tauri/` Rust backend, Tauri config, bundled `binaries/tgrep.exe` (downloaded at package time, not committed)
+- `src-tauri/` Rust backend and Tauri config
 - `tests/` Playwright browser tests with mock Tauri IPC
 
 ## Tests and package

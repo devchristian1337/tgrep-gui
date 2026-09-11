@@ -875,6 +875,21 @@ main {
   color: var(--color-muted);
   font-size: var(--text-sm);
 }
+.setting-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--text-sm);
+  margin: 8px 0 4px;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin {
+  animation: spin 0.8s linear infinite;
+}
 .settings-save {
   display: flex;
   justify-content: space-between;

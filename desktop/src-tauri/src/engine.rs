@@ -33,6 +33,7 @@ pub struct Engine {
     pub context: Mutex<Option<Context>>,
     pub servers: AsyncMutex<HashMap<String, Server>>,
     pub logs: Arc<Mutex<Vec<String>>>,
+    pub session_exe: Mutex<Option<String>>,
 }
 impl Engine {
     pub fn log(&self, text: impl Into<String>) {
@@ -68,6 +69,9 @@ pub fn command(exe: &str) -> Command {
     c
 }
 pub fn discover(configured: &str) -> Result<String> {
+    discover_from(configured, None)
+}
+pub fn discover_from(configured: &str, managed: Option<&str>) -> Result<String> {
     if !configured.trim().is_empty() {
         let p = PathBuf::from(configured.trim().trim_matches('"'));
         return if p.is_file() {
@@ -78,6 +82,15 @@ pub fn discover(configured: &str) -> Result<String> {
         } else {
             Err("Configured tgrep executable does not exist. Choose it in Settings.".into())
         };
+    }
+    if let Some(path) = managed {
+        let p = Path::new(path);
+        if p.is_file() {
+            return Ok(dunce::canonicalize(p)
+                .map_err(|e| e.to_string())?
+                .to_string_lossy()
+                .into());
+        }
     }
     let name = if cfg!(windows) { "tgrep.exe" } else { "tgrep" };
     let mut candidates = vec![];
@@ -99,7 +112,7 @@ pub fn discover(configured: &str) -> Result<String> {
         .into_iter()
         .find(|p| p.is_file())
         .map(|p| p.to_string_lossy().into())
-        .ok_or("tgrep was not found. Select the executable in Settings or put it on PATH.".into())
+        .ok_or("tgrep was not found. Use Update tgrep in Settings, or put it on PATH.".into())
 }
 pub fn validate(o: &mut SearchOptions, s: &Settings) -> Result<()> {
     let root = dunce::canonicalize(o.folder.trim().trim_matches('"'))
@@ -349,7 +362,10 @@ pub async fn search(
 ) -> Result<Outcome> {
     let started = Instant::now();
     validate(&mut o, &s)?;
-    s.engine_path = discover(&s.engine_path)?;
+    s.engine_path = discover_from(
+        &s.engine_path,
+        engine.session_exe.lock().unwrap().as_deref(),
+    )?;
     let exe = s.engine_path.clone();
     *engine.context.lock().unwrap() = Some(Context {
         options: o.clone(),

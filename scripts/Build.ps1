@@ -37,14 +37,6 @@ function Get-BundledTgrep {
     return (Resolve-Path -LiteralPath $toolsTgrep).Path
 }
 
-function Copy-BundledTgrep {
-    $tgrep = Get-BundledTgrep
-    $destDir = Join-Path $desktopRoot 'src-tauri\binaries'
-    New-Item -ItemType Directory -Force $destDir | Out-Null
-    Copy-Item -LiteralPath $tgrep -Destination (Join-Path $destDir 'tgrep.exe') -Force
-    return $tgrep
-}
-
 function Invoke-Npm([string[]]$NpmArgs) {
     & npm.cmd @NpmArgs
     if ($LASTEXITCODE -ne 0) { throw "npm $($NpmArgs -join ' ') failed." }
@@ -66,16 +58,13 @@ try {
             if ($LASTEXITCODE -ne 0) { throw 'cargo test failed.' }
         }
         'Build' {
-            Copy-BundledTgrep | Out-Null
             Invoke-Npm @('run', 'tauri', '--', 'build')
         }
         'Package' {
-            $bundled = Copy-BundledTgrep
             Invoke-Npm @('run', 'tauri', '--', 'build')
             $release = Join-Path $desktopRoot 'src-tauri\target\release'
             $exe = Join-Path $release 'tgrep-gui.exe'
             if (-not (Test-Path -LiteralPath $exe)) { throw "Release executable not found: $exe" }
-            Copy-Item -LiteralPath $bundled -Destination (Join-Path $release 'tgrep.exe') -Force
             $setup = Get-ChildItem (Join-Path $release 'bundle\nsis') -Filter '*setup.exe' |
                 Sort-Object LastWriteTime -Descending |
                 Select-Object -First 1
@@ -88,10 +77,9 @@ try {
             if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
             New-Item -ItemType Directory -Force $stage | Out-Null
             Copy-Item -LiteralPath $exe -Destination (Join-Path $stage 'tgrep-gui.exe') -Force
-            Copy-Item -LiteralPath $bundled -Destination (Join-Path $stage 'tgrep.exe') -Force
             $zipPath = Join-Path $artifacts 'tgrep-gui-win-x64.zip'
             if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
-            tar -a -cf $zipPath -C $stage tgrep-gui.exe tgrep.exe
+            tar -a -cf $zipPath -C $stage tgrep-gui.exe
             if ($LASTEXITCODE -ne 0) { throw 'tar failed.' }
             Write-Host "Created $setupDest"
             Write-Host "Created $zipPath"

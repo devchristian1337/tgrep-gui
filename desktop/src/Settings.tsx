@@ -1,20 +1,27 @@
 import { useState } from "react";
-import { Check, FolderOpen, Monitor, Sun, Moon } from "lucide-react";
+import { Check, FolderOpen, Monitor, Sun, Moon, RefreshCw } from "lucide-react";
 import type { Settings as Preferences } from "./types";
 import { api, native } from "./api";
 export default function Settings({
   value,
   onSave,
   busy,
+  version,
+  updateStatus,
+  onUpdateStatus,
 }: {
   value: Preferences;
   onSave: (s: Preferences) => Promise<void>;
   busy: boolean;
+  version: string;
+  updateStatus: string;
+  onUpdateStatus: (status: string) => void;
 }) {
   const [draft, setDraft] = useState(value);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [updating, setUpdating] = useState(false);
   const set = <K extends keyof Preferences>(key: K, v: Preferences[K]) => {
     setDraft((d) => ({ ...d, [key]: v }));
     setSaved(false);
@@ -129,9 +136,58 @@ export default function Settings({
         </fieldset>
         <fieldset disabled={busy || saving}>
           <legend>Search engine</legend>
+          <div className="setting-row">
+            <div>
+              <strong>Installed version</strong>
+              <p>
+                {version === "Engine unavailable"
+                  ? "tgrep is not installed"
+                  : version === "Checking engine…"
+                    ? "Checking engine version…"
+                    : `${version} · in use`}
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={
+                !native || updating || Boolean(draft.enginePath.trim())
+              }
+              aria-label="Update tgrep"
+              title="Check GitHub for a newer official tgrep and install it for the next launch"
+              onClick={async () => {
+                setUpdating(true);
+                onUpdateStatus("Checking for tgrep updates…");
+                try {
+                  onUpdateStatus(await api.checkEngine(draft));
+                } catch (e) {
+                  onUpdateStatus(String(e));
+                } finally {
+                  setUpdating(false);
+                }
+              }}
+            >
+              <RefreshCw size={16} className={updating ? "spin" : ""} />
+              {updating ? "Checking…" : "Update tgrep"}
+            </button>
+          </div>
+          {updateStatus && (
+            <p className="fieldset-note" role="status">
+              {updateStatus}
+            </p>
+          )}
+          <label className="setting-check">
+            <input
+              type="checkbox"
+              aria-label="Automatically update tgrep"
+              checked={draft.autoUpdateEngine}
+              onChange={(e) => set("autoUpdateEngine", e.target.checked)}
+            />
+            Automatically update tgrep
+          </label>
           <p className="fieldset-note">
-            Leave the path empty to use the bundled Microsoft tgrep, then PATH.
-            A configured path always wins.
+            Verified updates apply after restarting the app. Update tgrep also
+            works when automatic checks are off. A manual engine path disables
+            managed updates.
           </p>
           {(["enginePath", "indexPath", "editorPath"] as const).map((key) => (
             <label className="setting-field" key={key}>
@@ -150,7 +206,9 @@ export default function Settings({
                   placeholder={
                     key === "indexPath"
                       ? "Default: .tgrep inside each project"
-                      : "Automatic"
+                      : key === "enginePath"
+                        ? "Automatic: verified update, then PATH"
+                        : "Automatic"
                   }
                   onChange={(e) => set(key, e.target.value)}
                 />

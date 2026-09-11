@@ -10,6 +10,7 @@ export interface Settings {
   ignoreCase: boolean;
   literal: boolean;
   recentFolders: string[];
+  autoUpdateEngine: boolean;
 }
 export interface SearchOptions {
   folder: string;
@@ -58,6 +59,7 @@ export const defaults: Settings = {
   ignoreCase: true,
   literal: false,
   recentFolders: [],
+  autoUpdateEngine: true,
 };
 export const emptyOptions: SearchOptions = {
   folder: "",

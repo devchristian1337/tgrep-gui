@@ -2,7 +2,7 @@
 
 Windows desktop GUI for [Microsoft tgrep](https://github.com/microsoft/tgrep), written in **Rust / Tauri 2 / React**. Search a folder, pick a matching file, and inspect highlighted lines.
 
-Microsoft tgrep **1.0.5** is bundled.
+Microsoft tgrep is installed and updated from Settings (**Update tgrep**), not shipped inside the app zip.
 
 <img src="desktop/screenshot.png" alt="tgrep Studio" width="1320" />
 
@@ -10,11 +10,11 @@ Microsoft tgrep **1.0.5** is bundled.
 
 1. Download **tgrep-gui-win-x64-setup.exe** or **tgrep-gui-win-x64.zip** from [Releases](https://github.com/devchristian1337/tgrep-gui/releases).
 2. **Installer:** run the setup (per-user, no administrator account). It can bootstrap WebView2 if Windows does not already have it.
-3. **Zip:** extract `tgrep-gui.exe` and `tgrep.exe` into the same folder, then double-click **tgrep-gui.exe**. Keep both files together.
+3. **Zip:** extract `tgrep-gui.exe` and double-click it. In Settings, use **Update tgrep** to download the official Windows engine (or put `tgrep.exe` on PATH).
 
 Windows 10 64-bit (build 17763) or later is required. Windows 11 already includes WebView2.
 
-A configured `tgrep.exe` path in Settings takes precedence over the bundled engine, then PATH. No project paths, queries, or file contents are sent over the network.
+A configured `tgrep.exe` path in Settings takes precedence over a verified update, then PATH. No project paths, queries, or file contents are sent over the network. Engine updates download only the official Microsoft tgrep Windows zip from GitHub and verify its SHA-256 digest before it is used.
 
 ## Usage
 
@@ -51,7 +51,7 @@ Search display is bounded at 100,000 files. The file list streams as JSON record
 
 Settings are stored at `%AppData%\io.github.devchristian1337.tgrep-studio\settings.json` and written atomically. If the file is unreadable it is preserved until you save settings explicitly.
 
-Leave **tgrep executable** empty to use the bundled engine. A custom index path must be **absolute and dedicated to a single folder**. Theme can follow the system or be forced light/dark; four accents and 75–150% text scale are available.
+Leave **tgrep executable** empty to use a verified update, then PATH. **Update tgrep** checks GitHub for a newer stable Windows build, verifies it, and installs it for the next launch. Automatic updates are on by default and skip a custom engine path. A custom index path must be **absolute and dedicated to a single folder**. Theme can follow the system or be forced light/dark; four accents and 75–150% text scale are available.
 
 To open at the exact line, set the editor `.exe` path:
 
@@ -89,7 +89,7 @@ From the repository root:
 .\scripts\Build.ps1 -Task Package
 ```
 
-`Package` writes `artifacts\tgrep-gui-win-x64-setup.exe` and `artifacts\tgrep-gui-win-x64.zip` (the zip contains `tgrep-gui.exe` and bundled `tgrep.exe`). The script uses `.tools\rust` and downloads Microsoft tgrep 1.0.5 into `.tools\tgrep` when needed, checking GitHub’s SHA-256 digest.
+`Package` writes `artifacts\tgrep-gui-win-x64-setup.exe` and `artifacts\tgrep-gui-win-x64.zip` (the zip contains only `tgrep-gui.exe`). The script uses `.tools\rust` and downloads Microsoft tgrep into `.tools\tgrep` for tests and `Dev`, checking GitHub’s SHA-256 digest.
 
 From `desktop/`:
 

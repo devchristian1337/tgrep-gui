@@ -34,6 +34,10 @@ export const api = {
     native
       ? invoke<string>("engine_version", { settings })
       : Promise.resolve("Browser preview"),
+  checkEngine: (settings: Settings) =>
+    native
+      ? invoke<string>("check_engine_update", { settings })
+      : Promise.resolve("Engine updates run in the desktop app."),
   browse: (directory: boolean) => open({ directory, multiple: false }),
   search: (
     id: number,

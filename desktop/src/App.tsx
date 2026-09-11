@@ -48,6 +48,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [version, setVersion] = useState("Checking engine…");
+  const [engineUpdate, setEngineUpdate] = useState("");
   const query = useRef<HTMLInputElement>(null);
   const logDialog = useRef<HTMLDialogElement>(null);
   const [logs, setLogs] = useState<string[]>([]);
@@ -121,6 +122,29 @@ export default function App() {
       live = false;
     };
   }, [ready, settings.enginePath]);
+  useEffect(() => {
+    if (!ready || !native || !settingsReadable.current) return;
+    if (!settings.autoUpdateEngine || settings.enginePath.trim()) {
+      if (settings.enginePath.trim())
+        setEngineUpdate(
+          "A custom engine path is configured. Clear it and save settings to use managed updates.",
+        );
+      return;
+    }
+    let live = true;
+    setEngineUpdate("Checking for tgrep updates…");
+    api
+      .checkEngine(settings)
+      .then((status) => {
+        if (live) setEngineUpdate(status);
+      })
+      .catch((e) => {
+        if (live) setEngineUpdate(String(e));
+      });
+    return () => {
+      live = false;
+    };
+  }, [ready, settings.autoUpdateEngine, settings.enginePath]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "l") {
@@ -407,7 +431,14 @@ export default function App() {
           </div>
         )}
         {page === "settings" ? (
-          <Settings value={settings} onSave={save} busy={busy} />
+          <Settings
+            value={settings}
+            onSave={save}
+            busy={busy}
+            version={version}
+            updateStatus={engineUpdate}
+            onUpdateStatus={setEngineUpdate}
+          />
         ) : (
           <div className="search-view">
             <header className="search-heading">

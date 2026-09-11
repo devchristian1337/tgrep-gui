@@ -14,6 +14,11 @@ pub struct Settings {
     pub ignore_case: bool,
     pub literal: bool,
     pub recent_folders: Vec<String>,
+    #[serde(default = "default_auto_update")]
+    pub auto_update_engine: bool,
+}
+fn default_auto_update() -> bool {
+    true
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -29,6 +34,7 @@ impl Default for Settings {
             ignore_case: true,
             literal: false,
             recent_folders: vec![],
+            auto_update_engine: true,
         }
     }
 }

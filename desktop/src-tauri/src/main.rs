@@ -2,6 +2,7 @@
 mod engine;
 mod models;
 mod protocol;
+mod updater;
 use engine::{Engine, Result};
 use models::*;
 use std::{
@@ -11,11 +12,14 @@ use std::{
 };
 use tauri::{ipc::Channel, Manager, State};
 use tokio_util::sync::CancellationToken;
+use updater::{LiveHooks, LiveUpdater};
 
 struct AppState {
     engine: Arc<Engine>,
     settings_path: PathBuf,
     settings_lock: Mutex<()>,
+    updater: LiveUpdater,
+    update_token: Mutex<Option<CancellationToken>>,
 }
 #[tauri::command]
 fn load_settings(state: State<AppState>) -> Result<Settings> {
@@ -34,6 +38,9 @@ fn save_settings(state: State<AppState>, mut settings: Settings) -> Result<()> {
         return Err("Interface scale must be between 75% and 150%.".into());
     }
     settings.recent_folders.truncate(12);
+    if let Some(token) = state.update_token.lock().unwrap().take() {
+        token.cancel();
+    }
     let _lock = state.settings_lock.lock().unwrap();
     let dir = state.settings_path.parent().unwrap();
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
@@ -100,8 +107,12 @@ fn get_logs(state: State<AppState>) -> Vec<String> {
     state.engine.logs.lock().unwrap().clone()
 }
 #[tauri::command]
-async fn engine_version(settings: Settings) -> Result<String> {
-    let exe = engine::discover(&settings.engine_path)?;
+async fn engine_version(state: State<'_, AppState>, settings: Settings) -> Result<String> {
+    pin_session(&state, &settings).await;
+    let exe = engine::discover_from(
+        &settings.engine_path,
+        state.engine.session_exe.lock().unwrap().as_deref(),
+    )?;
     let out = tokio::time::timeout(
         std::time::Duration::from_secs(5),
         engine::command(&exe).arg("--version").output(),
@@ -113,6 +124,41 @@ async fn engine_version(settings: Settings) -> Result<String> {
         return Err("Engine version check failed.".into());
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().into())
+}
+#[tauri::command]
+async fn check_engine_update(state: State<'_, AppState>, settings: Settings) -> Result<String> {
+    if !settings.engine_path.trim().is_empty() {
+        return Ok("A custom engine path is configured. Clear it and save settings to use managed updates.".into());
+    }
+    pin_session(&state, &settings).await;
+    let active = engine::discover_from(
+        &settings.engine_path,
+        state.engine.session_exe.lock().unwrap().as_deref(),
+    )
+    .ok();
+    let token = CancellationToken::new();
+    *state.update_token.lock().unwrap() = Some(token.clone());
+    let msg = state.updater.check(active.as_deref(), &token).await?;
+    state.engine.log(msg.clone());
+    Ok(msg)
+}
+async fn pin_session(state: &State<'_, AppState>, settings: &Settings) {
+    if !settings.engine_path.trim().is_empty() {
+        return;
+    }
+    if state.engine.session_exe.lock().unwrap().is_some() {
+        return;
+    }
+    let bundled = engine::discover("").ok();
+    let min = match &bundled {
+        Some(path) => updater::read_version(path, &CancellationToken::new())
+            .await
+            .ok(),
+        None => None,
+    };
+    if let Some(path) = state.updater.resolve(min).await {
+        *state.engine.session_exe.lock().unwrap() = Some(path);
+    }
 }
 #[tauri::command]
 fn open_result(
@@ -178,10 +224,20 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let settings_path = app.path().app_config_dir()?.join("settings.json");
+            let engine = Arc::new(Engine::default());
+            let log = engine.clone();
+            let arch = updater::host_arch().unwrap_or("unsupported");
+            let root = updater::default_root()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join(arch);
             app.manage(AppState {
-                engine: Arc::new(Engine::default()),
+                engine,
                 settings_path,
                 settings_lock: Mutex::new(()),
+                updater: updater::Updater::new(root, arch.into(), LiveHooks::new(), move |t| {
+                    log.log(t);
+                }),
+                update_token: Mutex::new(None),
             });
             Ok(())
         })
@@ -194,6 +250,7 @@ fn main() {
             restart_server,
             get_logs,
             engine_version,
+            check_engine_update,
             open_result,
             get_prefill
         ])

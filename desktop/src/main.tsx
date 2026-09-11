@@ -6,8 +6,10 @@ import "@fontsource/inter/600.css";
 import "@fontsource/space-grotesk/600.css";
 import "@fontsource/jetbrains-mono/400.css";
 import App from "./App";
+import { suppressBrowserChrome } from "./chrome";
 import "../tokens.css";
 import "./styles.css";
+suppressBrowserChrome();
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />
