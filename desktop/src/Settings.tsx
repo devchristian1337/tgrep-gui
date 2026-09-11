@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Check, FolderOpen, Monitor, Sun, Moon, RefreshCw } from "lucide-react";
 import type { Settings as Preferences, EngineUpdate } from "./types";
 import { api, native } from "./api";
-import { accentHex } from "./appearance";
+import AccentPicker from "./AccentPicker";
 import DensitySelect from "./DensitySelect";
 import {
   bindsConflict,
@@ -138,45 +138,11 @@ export default function Settings({
               <strong>Accent color</strong>
               <p>A little color, exactly where it helps.</p>
             </div>
-            <div className="rgb-picker">
-              <input
-                type="color"
-                aria-label="Accent color"
-                value={accentHex(draft.accent)}
-                onChange={(e) => set("accent", e.target.value)}
-              />
-              {["R", "G", "B"].map((channel, index) => (
-                <label key={channel}>
-                  {channel}
-                  <input
-                    type="number"
-                    min="0"
-                    max="255"
-                    step="1"
-                    required
-                    aria-label={`Accent ${channel}`}
-                    value={parseInt(
-                      accentHex(draft.accent).slice(
-                        1 + index * 2,
-                        3 + index * 2,
-                      ),
-                      16,
-                    )}
-                    onChange={(e) => {
-                      if (!e.target.value || !e.target.validity.valid) return;
-                      const hex = accentHex(draft.accent);
-                      const start = 1 + index * 2;
-                      set(
-                        "accent",
-                        hex.slice(0, start) +
-                          Number(e.target.value).toString(16).padStart(2, "0") +
-                          hex.slice(start + 2),
-                      );
-                    }}
-                  />
-                </label>
-              ))}
-            </div>
+            <AccentPicker
+              value={draft.accent}
+              onChange={(color) => set("accent", color)}
+              disabled={busy || saving || restarting}
+            />
           </div>
           <div className="setting-row">
             <div>

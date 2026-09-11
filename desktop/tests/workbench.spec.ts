@@ -169,7 +169,10 @@ test("ready engine update exposes an app restart action", async ({ page }) => {
   ).toBe(false);
   const calls = await page.evaluate(() => (window as any).calls);
   const restartIndex = calls.findIndex((c: any) => c.cmd === "restart_app");
-  const savedBeforeRestart = calls.slice(0, restartIndex).filter((c: any) => c.cmd === "save_settings").at(-1);
+  const savedBeforeRestart = calls
+    .slice(0, restartIndex)
+    .filter((c: any) => c.cmd === "save_settings")
+    .at(-1);
   expect(savedBeforeRestart?.args.settings.theme).toBe("dark");
 });
 test("automatic update keeps restart available across navigation and a failed recheck", async ({
@@ -614,12 +617,16 @@ test("RGB palette, density keyboard menu and native window theme follow saved se
       ),
     )
     .toBe("light");
+  await page.getByRole("button", { name: "Choose accent color" }).click();
   await page.getByLabel("Accent color", { exact: true }).fill("#3478ab");
+  await page.getByLabel("Color format").selectOption("rgb");
   await expect(page.getByLabel("Accent R", { exact: true })).toHaveValue("52");
   await page.getByLabel("Accent R", { exact: true }).fill("120");
+  await page.getByLabel("Color format").selectOption("hex");
   await expect(page.getByLabel("Accent color", { exact: true })).toHaveValue(
-    "#7878ab",
+    "#7878AB",
   );
+  await page.getByRole("button", { name: "Close color picker" }).click();
   const combo = page.getByRole("combobox", { name: "Result density" });
   await combo.click();
   await expect(page.getByRole("listbox")).toBeVisible();
@@ -642,9 +649,11 @@ test("RGB palette, density keyboard menu and native window theme follow saved se
     )
     .toBe("dark");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Choose accent color" }).click();
   await expect(page.getByLabel("Accent color", { exact: true })).toHaveValue(
-    "#7878ab",
+    "#7878AB",
   );
+  await page.getByRole("button", { name: "Close color picker" }).click();
   await expect(combo).toHaveText("Compact");
   await combo.click();
   await page.screenshot({ path: "test-results/appearance-dark.png" });
@@ -671,7 +680,9 @@ test("settings persist theme and accent, shortcuts and log dialog work", async (
   await page.goto("/");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Dark", exact: true }).click();
+  await page.getByRole("button", { name: "Choose accent color" }).click();
   await page.getByLabel("Accent color", { exact: true }).fill("#3478ab");
+  await page.getByRole("button", { name: "Close color picker" }).click();
   await page.getByRole("button", { name: "Save settings" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expect(page.locator("html")).toHaveAttribute("data-accent", "#3478ab");
@@ -683,6 +694,63 @@ test("settings persist theme and accent, shortcuts and log dialog work", async (
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).not.toBeVisible();
 });
+test("the status bar is never overlapped by the workbench", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 567 });
+  await page.goto("/");
+  const bar = page.locator(".statusbar");
+  await expect(bar).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  const invaders = await page.evaluate(() => {
+    const statusbar = document.querySelector(".statusbar")!;
+    const strip = statusbar.getBoundingClientRect();
+    // What the eye sees: every scrolling ancestor clips the element it holds.
+    const clipped = (node: Element) => {
+      const own = node.getBoundingClientRect();
+      let [top, bottom] = [own.top, own.bottom];
+      for (let p = node.parentElement; p; p = p.parentElement)
+        if (getComputedStyle(p).overflow !== "visible") {
+          const box = p.getBoundingClientRect();
+          top = Math.max(top, box.top);
+          bottom = Math.min(bottom, box.bottom);
+        }
+      return { top, bottom };
+    };
+    return [...document.querySelectorAll("main *")]
+      .filter((el) => !statusbar.contains(el) && !el.contains(statusbar))
+      .filter((el) => {
+        const box = clipped(el);
+        return box.bottom > strip.top + 1 && box.top < strip.bottom - 1;
+      })
+      .map((el) => String(el.className))
+      .slice(0, 5);
+  });
+  expect(invaders).toEqual([]);
+});
+for (const height of [560, 900])
+  test(`accent panel clears its trigger at ${height}px`, async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    const trigger = page.getByRole("button", { name: "Choose accent color" });
+    await trigger.click();
+    const box = (await trigger.boundingBox())!;
+    const panel = (await page
+      .getByRole("dialog", { name: "Accent color picker" })
+      .boundingBox())!;
+    expect(
+      panel.y + panel.height <= box.y || panel.y >= box.y + box.height,
+      "the panel must sit fully above or below the trigger, never over it",
+    ).toBe(true);
+    expect(panel.y).toBeGreaterThanOrEqual(0);
+    expect(panel.y + panel.height).toBeLessThanOrEqual(height);
+    expect(
+      await page
+        .getByRole("dialog", { name: "Accent color picker" })
+        .evaluate((el) => el.scrollHeight <= el.clientHeight + 1),
+      "the panel must fit its content instead of hiding the presets",
+    ).toBe(true);
+  });
 for (const width of [320, 375, 414, 768, 1440])
   test(`layout fits ${width}px in both themes`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });

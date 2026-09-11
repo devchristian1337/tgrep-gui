@@ -1,6 +1,6 @@
 [package]
 name = "tgrep-gui"
-version = "2.0.5"
+version = "2.0.6"
 edition = "2021"
 description = "A customizable desktop workbench for Microsoft tgrep"
 license = "MIT"
