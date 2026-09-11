@@ -188,6 +188,24 @@ test("browser preview is honest and validates input", async ({ page }) => {
     page.getByRole("button", { name: "Search", exact: true }),
   ).toHaveCSS("cursor", "pointer");
 });
+test("Filters button hover is a complete control", async ({ page }) => {
+  await page.goto("/");
+  const filters = page.getByRole("button", { name: "Filters", exact: true });
+  await expect(filters).toHaveCSS("appearance", "none");
+  await expect(filters).toHaveCSS("overflow", "visible");
+  const box = await filters.boundingBox();
+  expect(box?.height).toBeGreaterThanOrEqual(36);
+  await filters.hover();
+  await page.screenshot({
+    path: "test-results/filters-hover.png",
+    clip: {
+      x: Math.round(box!.x - 130),
+      y: Math.round(box!.y - 70),
+      width: 270,
+      height: 150,
+    },
+  });
+});
 test("search options, streaming results, stale previews and editor requests", async ({
   page,
 }) => {

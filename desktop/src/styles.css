@@ -28,6 +28,7 @@ select {
   cursor: pointer;
 }
 button {
+  appearance: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -39,6 +40,7 @@ button {
   background: var(--color-surface);
   color: var(--color-ink);
   white-space: nowrap;
+  overflow: visible;
 }
 button:hover:not(:disabled) {
   background: var(--color-hover);
@@ -416,7 +418,11 @@ main {
   border-color: transparent;
   font-size: var(--text-sm);
   color: var(--color-muted);
-  padding-right: 0;
+  flex-shrink: 0;
+}
+.filter-button:hover:not(:disabled),
+.filter-button.selected {
+  border-color: var(--color-rule);
 }
 .filter-button.selected {
   color: var(--color-accent);
