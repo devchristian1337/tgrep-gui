@@ -71,6 +71,12 @@ export function normalizeSettings(raw: Partial<Settings>): Settings {
   return {
     ...defaults,
     ...raw,
+    theme: ["system", "light", "dark"].includes(raw.theme ?? "")
+      ? raw.theme!
+      : defaults.theme,
+    density: ["comfortable", "compact"].includes(raw.density ?? "")
+      ? raw.density!
+      : defaults.density,
     recentFolders: raw.recentFolders ?? defaults.recentFolders,
     shortcuts: mergeShortcuts(raw.shortcuts),
   };

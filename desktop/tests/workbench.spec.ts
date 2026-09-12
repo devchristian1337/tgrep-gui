@@ -93,7 +93,8 @@ async function mockDesktop(
               message: { type: "progress", id: args.id, message: "Searching…" },
             });
             const hits =
-              args.options.pattern === "absent"
+              w.searchHits ||
+              (args.options.pattern === "absent"
                 ? []
                 : [
                     {
@@ -106,7 +107,7 @@ async function mockDesktop(
                       relativePath: "src/main.rs",
                       count: 1,
                     },
-                  ];
+                  ]);
             callback({
               index: 1,
               message: { type: "hits", id: args.id, hits },
@@ -153,6 +154,163 @@ async function mockDesktop(
     { updateReady, automaticUpdates },
   );
 }
+test("invalid stored appearance values do not crash Settings", async ({
+  page,
+}) => {
+  await mockDesktop(page, false, false);
+  await page.addInitScript(() => {
+    const w = window as any;
+    const invoke = w.__TAURI_INTERNALS__.invoke;
+    w.__TAURI_INTERNALS__.invoke = async (cmd: string, args: any) => {
+      const result = await invoke(cmd, args);
+      return cmd === "load_settings"
+        ? { ...result, density: "", theme: "invalid" }
+        : result;
+    };
+  });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(
+    page.getByRole("combobox", { name: "Result density" }),
+  ).toContainText("Comfortable");
+  expect(errors).toEqual([]);
+  await page
+    .getByRole("button", { name: "Save settings", exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).calls
+            .filter((c: any) => c.cmd === "save_settings")
+            .at(-1)?.args.settings.theme,
+      ),
+    )
+    .toBe("system");
+});
+
+test("settings wait for loaded preferences before creating a draft", async ({
+  page,
+}) => {
+  await mockDesktop(page, false, false);
+  await page.addInitScript(() => {
+    const w = window as any;
+    const invoke = w.__TAURI_INTERNALS__.invoke;
+    w.__TAURI_INTERNALS__.invoke = async (cmd: string, args: any) => {
+      if (cmd === "load_settings") {
+        await new Promise<void>((resolve) => {
+          w.releaseSettings = resolve;
+        });
+        return {
+          ...(await invoke(cmd, args)),
+          enginePath: "C:\\tools\\tgrep.exe",
+          editorPath: "C:\\tools\\Code.exe",
+          theme: "dark",
+        };
+      }
+      return invoke(cmd, args);
+    };
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.evaluate(() => (window as any).releaseSettings());
+  await expect(
+    page.getByLabel("tgrep executable", { exact: true }),
+  ).toHaveValue("C:\\tools\\tgrep.exe");
+  await page
+    .getByRole("button", { name: "Save settings", exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).calls
+            .filter((c: any) => c.cmd === "save_settings")
+            .at(-1)?.args.settings,
+      ),
+    )
+    .toMatchObject({
+      enginePath: "C:\\tools\\tgrep.exe",
+      editorPath: "C:\\tools\\Code.exe",
+      theme: "dark",
+    });
+});
+
+test("settings preserve newly searched folders while retaining draft edits", async ({
+  page,
+}) => {
+  await mockDesktop(page, false, false);
+  await page.goto("/");
+  await expect(
+    page.getByPlaceholder("Choose a project directory…"),
+  ).toHaveValue("C:\\projects\\atlas");
+  await page
+    .getByPlaceholder("Choose a project directory…")
+    .fill("C:\\projects\\new-project");
+  await page.getByLabel("Search pattern").fill("slow");
+  await page.locator(".search-button").click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.keyboard.press("Escape");
+  const save = page.getByRole("button", { name: "Save settings", exact: true });
+  await expect(save).toBeEnabled();
+  await page
+    .getByLabel("External editor", { exact: true })
+    .fill("C:\\tools\\Code.exe");
+  await save.click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).calls
+            .filter((c: any) => c.cmd === "save_settings")
+            .at(-1)?.args.settings,
+      ),
+    )
+    .toMatchObject({
+      recentFolders: ["C:\\projects\\new-project", "C:\\projects\\atlas"],
+      editorPath: "C:\\tools\\Code.exe",
+    });
+});
+
+test("line selection extends upward repeatedly and reverses direction", async ({
+  page,
+}) => {
+  await mockDesktop(page, false, false);
+  await page.goto("/");
+  await page.evaluate(() => {
+    (window as any).previewLines = Array.from({ length: 8 }, (_, i) => ({
+      number: i + 1,
+      text: `hello ${i + 1}`,
+      spans: [],
+      count: 1,
+    }));
+  });
+  await page.getByLabel("Search pattern").fill("hello");
+  await page.locator(".search-button").click();
+  await page.locator(".file-row").first().click();
+  await page.locator(".code-line").nth(4).click();
+  await page.locator(".code-scroll").focus();
+  const selected = () =>
+    page
+      .locator(".code-line.chosen")
+      .evaluateAll((rows) =>
+        rows.map((row) => row.getAttribute("data-context-line")),
+      );
+  await page.keyboard.press("Shift+ArrowUp");
+  await page.keyboard.press("Shift+ArrowUp");
+  await expect.poll(selected).toEqual(["3", "4", "5"]);
+  await page.keyboard.press("Shift+ArrowDown");
+  await expect.poll(selected).toEqual(["4", "5"]);
+  await page
+    .locator(".code-line")
+    .nth(1)
+    .click({ modifiers: ["Shift"] });
+  await page.keyboard.press("Shift+ArrowUp");
+  await expect.poll(selected).toEqual(["1", "2", "3", "4", "5"]);
+});
+
 test("empty preview remains reachable after reducing window height", async ({
   page,
 }) => {
@@ -564,6 +722,70 @@ test("select all copies matching lines beyond the virtualized viewport", async (
     (await page.evaluate(() => navigator.clipboard.readText())).split("\n"),
   ).toHaveLength(200);
 });
+test("large results stay virtualized and copy 10000 selected lines", async ({
+  page,
+}) => {
+  await mockDesktop(page, false, false);
+  await page.addInitScript(() => {
+    const w = window as any;
+    w.searchHits = Array.from({ length: 100000 }, (_, i) => ({
+      path: `C:/project/file-${i}.rs`,
+      relativePath: `src/file-${i}.rs`,
+      count: 1,
+    }));
+    w.previewLines = Array.from({ length: 10000 }, (_, i) => ({
+      number: i + 1,
+      text: `match ${i + 1}`,
+      spans: [],
+      count: 1,
+    }));
+    w.copyTimes = [];
+    document.addEventListener(
+      "keydown",
+      (e) => {
+        if (e.ctrlKey && e.key === "c") w.copyStarted = performance.now();
+      },
+      true,
+    );
+    Object.defineProperty(navigator.clipboard, "writeText", {
+      value: async (text: string) => {
+        w.copiedText = text;
+        w.copyTimes.push(performance.now() - w.copyStarted);
+      },
+    });
+  });
+  await page.goto("/");
+  await page.getByLabel("Search pattern").fill("match");
+  await page
+    .getByRole("main")
+    .getByRole("button", { name: "Search", exact: true })
+    .click();
+  await expect(page.locator(".file-panel .count")).toHaveText("100,000");
+  expect(await page.locator(".file-row").count()).toBeLessThan(60);
+  await page.getByLabel("Filter results").fill("FILE-99999");
+  await expect(page.locator(".file-row")).toHaveCount(1);
+  await page.locator(".file-row").click();
+  await expect(page.locator(".preview-summary")).toContainText(
+    "10,000 matching lines",
+  );
+  expect(await page.locator(".code-line").count()).toBeLessThan(80);
+  await page.locator(".code-line").first().click();
+  await page.keyboard.press("Control+a");
+  await expect(
+    page.getByRole("button", { name: "Copy selected lines (10000)" }),
+  ).toBeEnabled();
+  for (let i = 0; i < 5; i++) await page.keyboard.press("Control+c");
+  const measured = await page.evaluate(() => {
+    const w = window as any;
+    return { times: w.copyTimes, lines: w.copiedText.split("\n") };
+  });
+  expect(measured.lines).toHaveLength(10000);
+  expect(measured.lines[9999]).toBe(
+    "C:/project/file-99999.rs:10000: match 10000",
+  );
+  console.log(`10000-line copy preparation (ms): ${measured.times.join(", ")}`);
+});
+
 test("browser preview zoom scales controls and resets layout", async ({
   page,
 }) => {

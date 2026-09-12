@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   FileCode2,
@@ -25,7 +25,7 @@ export function Highlight({ line }: { line: MatchLine }) {
   pieces.push(line.text.slice(offset));
   return <>{pieces}</>;
 }
-export function FileList({
+export const FileList = memo(function FileList({
   hits,
   selected,
   onSelect,
@@ -42,13 +42,11 @@ export function FileList({
 }) {
   const [filter, setFilter] = useState("");
   const parent = useRef<HTMLDivElement>(null);
-  const filtered = useMemo(
-    () =>
-      hits.filter((h) =>
-        h.relativePath.toLowerCase().includes(filter.toLowerCase()),
-      ),
-    [hits, filter],
-  );
+  const filtered = useMemo(() => {
+    if (!filter) return hits;
+    const needle = filter.toLowerCase();
+    return hits.filter((h) => h.relativePath.toLowerCase().includes(needle));
+  }, [hits, filter]);
   const virtual = useVirtualizer({
     count: filtered.length,
     getScrollElement: () => parent.current,
@@ -140,7 +138,7 @@ export function FileList({
       </div>
     </section>
   );
-}
+});
 export function CodePreview({
   hit,
   preview,
@@ -163,7 +161,9 @@ export function CodePreview({
   const parent = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
   const [chosen, setChosen] = useState<number[]>([]);
+  const chosenSet = useMemo(() => new Set(chosen), [chosen]);
   const anchor = useRef(0);
+  const cursor = useRef(-1);
   const lines = preview?.lines || [];
   const virtual = useVirtualizer({
     count: lines.length,
@@ -174,7 +174,7 @@ export function CodePreview({
   const copyLines = () =>
     onCopy(
       lines
-        .filter((_, i) => chosen.includes(i))
+        .filter((_, i) => chosenSet.has(i))
         .map((l) => `${hit?.path}:${l.number}: ${l.text}`)
         .join("\n"),
     );
@@ -273,6 +273,7 @@ export function CodePreview({
             aria-label={`Code preview. ${formatShortcut(shortcuts.selectAll)} selects all lines; ${formatShortcut(shortcuts.copy)} copies selected lines; ${formatShortcut(shortcuts.openEditor)} opens the editor.`}
             onKeyDown={(e) => {
               const go = (next: number, extend: boolean) => {
+                cursor.current = next;
                 if (extend) {
                   setChosen(
                     Array.from(
@@ -291,6 +292,7 @@ export function CodePreview({
                 e.stopPropagation();
                 setChosen(lines.map((_, index) => index));
                 anchor.current = 0;
+                cursor.current = lines.length - 1;
                 return;
               }
               if (matches(shortcuts.copy, e) && chosen.length) {
@@ -306,7 +308,7 @@ export function CodePreview({
                 return;
               }
               if (!lines.length) return;
-              const current = chosen.at(-1) ?? -1;
+              const current = cursor.current;
               const extendDown =
                 matches(shortcuts.extendDown, e) ||
                 (e.shiftKey &&
@@ -346,10 +348,11 @@ export function CodePreview({
                 return (
                   <div
                     key={v.index}
-                    className={`code-line ${chosen.includes(v.index) ? "chosen" : ""}`}
+                    className={`code-line ${chosenSet.has(v.index) ? "chosen" : ""}`}
                     data-context-line={l.number}
                     style={{ transform: `translateY(${v.start}px)` }}
                     onClick={(e) => {
+                      cursor.current = v.index;
                       if (e.shiftKey) {
                         setChosen(
                           Array.from(

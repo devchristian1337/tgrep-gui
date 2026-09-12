@@ -69,6 +69,11 @@ pub fn search_args(
         for g in split_globs(&o.exclude)? {
             let mut g = g.trim_start_matches('!').replace('\\', "/");
             if g.ends_with('/') {
+                // A bare directory name applies at every depth. Explicit paths
+                // keep their existing scope.
+                if !g[..g.len() - 1].contains('/') && g.len() > 1 {
+                    g = format!("**/{g}");
+                }
                 g.push_str("**");
             }
             a.extend(["-g".into(), format!("!{g}")]);
@@ -114,6 +119,18 @@ pub fn parse_match(json: &str, root: &Path) -> Result<Option<(PathBuf, MatchLine
     let mut spans = vec![];
     let subs = d["submatches"].as_array();
     if let Some(subs) = subs {
+        // tgrep emits ordered spans. Advance through the text once instead of
+        // recounting every prefix; still accept overlapping/unordered spans.
+        let (mut byte_offset, mut utf16_offset) = (0, 0);
+        let mut offset = |byte: usize| {
+            if byte < byte_offset {
+                byte_offset = 0;
+                utf16_offset = 0;
+            }
+            utf16_offset += text[byte_offset..byte].encode_utf16().count();
+            byte_offset = byte;
+            utf16_offset
+        };
         for s in subs {
             let start = s["start"].as_u64().unwrap_or(0) as usize;
             let end = s["end"].as_u64().unwrap_or(0) as usize;
@@ -122,10 +139,7 @@ pub fn parse_match(json: &str, root: &Path) -> Result<Option<(PathBuf, MatchLine
                 && text.is_char_boundary(start)
                 && text.is_char_boundary(end)
             {
-                spans.push((
-                    text[..start].encode_utf16().count(),
-                    text[..end].encode_utf16().count(),
-                ));
+                spans.push((offset(start), offset(end)));
             }
         }
     }
@@ -169,6 +183,22 @@ pub fn parse_status(text: &str) -> Result<Status, String> {
 mod tests {
     use super::*;
     #[test]
+    #[ignore = "manual performance measurement"]
+    fn benchmark_dense_unicode_matches() {
+        let json = serde_json::json!({"type":"match","data":{
+            "path":{"text":"dense.rs"}, "lines":{"text":"é😀x".repeat(10000)},
+            "submatches":(0..10000).map(|i| serde_json::json!({"start":i*7,"end":i*7+7})).collect::<Vec<_>>()
+        }}).to_string();
+        let start = std::time::Instant::now();
+        for _ in 0..5 {
+            let (_, line) = parse_match(std::hint::black_box(&json), Path::new(".")).unwrap().unwrap();
+            assert_eq!(line.spans.len(), 10000);
+            assert_eq!(line.spans[9999], (39996, 40000));
+            std::hint::black_box(line);
+        }
+        println!("dense Unicode parse: {:.3} ms/record", start.elapsed().as_secs_f64() * 1000.0 / 5.0);
+    }
+    #[test]
     fn query_is_not_parsed_as_an_option_and_directory_exclusions_expand() {
         let o = SearchOptions {
             folder: "/tmp/project".into(),
@@ -183,7 +213,7 @@ mod tests {
         let args = search_args(&o, "", None).unwrap();
         let end = args.iter().position(|a| a == "--").unwrap();
         assert_eq!(&args[end + 1..], &["--help", "/tmp/project"]);
-        assert!(args.iter().any(|a| a == "!target/**"));
+        assert!(args.iter().any(|a| a == "!**/target/**"));
         assert!(args.iter().any(|a| a == "*.{rs,ts}"));
         assert!(args.iter().any(|a| a == "--no-index"));
     }
@@ -201,6 +231,19 @@ mod tests {
         let (_, m) = parse_match(json, Path::new("/tmp")).unwrap().unwrap();
         assert_eq!(m.spans, vec![(3, 8)]);
         assert_eq!(m.text, "é😀hello");
+    }
+    #[test]
+    fn unicode_offsets_preserve_overlaps_order_and_invalid_span_handling() {
+        let text = "é😀hello";
+        let ranges = [(6, 11), (2, 6), (0, 6), (1, 2), (6, 99), (6, 6), (0, 2)];
+        let json = serde_json::json!({"type":"match","data":{
+            "path":{"text":"file.rs"}, "lines":{"text":format!("{text}\r\n")},
+            "submatches":ranges.iter().map(|(start,end)| serde_json::json!({"start":start,"end":end})).collect::<Vec<_>>()
+        }}).to_string();
+        let (_, line) = parse_match(&json, Path::new(".")).unwrap().unwrap();
+        assert_eq!(line.spans, vec![(3, 8), (1, 3), (0, 3), (0, 1)]);
+        assert_eq!(line.text, text);
+        assert_eq!(line.count, ranges.len());
     }
     #[test]
     fn base64_and_non_match() {

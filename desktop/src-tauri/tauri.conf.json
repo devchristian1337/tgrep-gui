@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "tgrep Studio",
   "mainBinaryName": "tgrep-gui",
-  "version": "2.0.7",
+  "version": "2.0.8",
   "identifier": "io.github.devchristian1337.tgrep-studio",
   "build": {
     "beforeDevCommand": "npm run dev",

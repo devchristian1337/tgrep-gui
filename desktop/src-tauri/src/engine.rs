@@ -19,7 +19,7 @@ pub type Result<T> = std::result::Result<T, String>;
 pub struct Context {
     pub options: SearchOptions,
     pub settings: Settings,
-    pub allowed: HashSet<String>,
+    pub allowed: Arc<HashSet<String>>,
 }
 pub struct Server {
     child: Child,
@@ -33,7 +33,7 @@ pub struct Engine {
     pub context: Mutex<Option<Context>>,
     pub servers: AsyncMutex<HashMap<String, Server>>,
     pub logs: Arc<Mutex<Vec<String>>>,
-    pub session_exe: Mutex<Option<String>>,
+    pub session_exe: tokio::sync::OnceCell<Option<String>>,
 }
 impl Engine {
     pub fn log(&self, text: impl Into<String>) {
@@ -364,13 +364,13 @@ pub async fn search(
     validate(&mut o, &s)?;
     s.engine_path = discover_from(
         &s.engine_path,
-        engine.session_exe.lock().unwrap().as_deref(),
+        engine.session_exe.get().and_then(Option::as_deref),
     )?;
     let exe = s.engine_path.clone();
     *engine.context.lock().unwrap() = Some(Context {
         options: o.clone(),
         settings: s.clone(),
-        allowed: HashSet::new(),
+        allowed: Arc::default(),
     });
     let progress = |message| {
         let _ = channel.send(SearchEvent::Progress { id, message });
@@ -437,7 +437,7 @@ pub async fn search(
         let _ = channel.send(SearchEvent::Hits { id, hits: batch });
     }
     if let Some(c) = engine.context.lock().unwrap().as_mut() {
-        c.allowed = counts.keys().cloned().collect();
+        c.allowed = Arc::new(counts.keys().cloned().collect());
     }
     let cancelled = token.is_cancelled();
     if !cancelled && !truncated {
@@ -539,19 +539,84 @@ mod tests {
         .unwrap_err();
         assert_eq!(err, "Cancelled");
     }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn process_errors_drain_stderr_and_cancellation_stops_a_running_child() {
+        let shell = PathBuf::from(std::env::var_os("SystemRoot").unwrap())
+            .join("System32/WindowsPowerShell/v1.0/powershell.exe");
+        let exe = shell.to_str().unwrap();
+        let token = CancellationToken::new();
+        let args = vec!["-NoProfile".into(), "-NonInteractive".into(), "-Command".into(),
+            "[Console]::Error.Write(('diagnostic' * 20000)); [Console]::WriteLine('done'); exit 2".into()];
+        let mut output = Vec::new();
+        let result = tokio::time::timeout(Duration::from_secs(10), run(
+            exe, &args, ".", &token, Arc::default(), |line| { output.push(line); Ok(()) },
+        )).await.unwrap();
+        assert_eq!(output, vec!["done"]);
+        let error = result.unwrap_err();
+        assert!(error.contains("code 2") && error.contains("diagnostic"));
+
+        let args = vec!["-NoProfile".into(), "-NonInteractive".into(), "-Command".into(),
+            "[Console]::WriteLine('ready'); Start-Sleep -Seconds 60".into()];
+        let result = tokio::time::timeout(Duration::from_secs(10), run(
+            exe, &args, ".", &token, Arc::default(), |line| {
+                assert_eq!(line, "ready");
+                token.cancel();
+                Ok(())
+            },
+        )).await.unwrap();
+        assert_eq!(result.unwrap_err(), "Cancelled");
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "requires TGREP_TEST_EXE pointing to an installed Microsoft tgrep"]
+    async fn locked_preview_reports_error_and_recovers_after_unlock() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("hello.rs");
+        std::fs::write(&path, "hello\n").unwrap();
+        let engine = Engine::default();
+        let s = Settings { engine_path: std::env::var("TGREP_TEST_EXE").unwrap(), ..Settings::default() };
+        search(&engine, 1, options(dir.path()), s, Channel::new(|_| Ok(())), CancellationToken::new()).await.unwrap();
+        let path_string = dunce::canonicalize(&path).unwrap().to_string_lossy().into_owned();
+        let locked = std::fs::OpenOptions::new().read(true).share_mode(0).open(&path).unwrap();
+        assert!(preview(&engine, &path_string, &CancellationToken::new()).await.is_err());
+        drop(locked);
+        assert_eq!(preview(&engine, &path_string, &CancellationToken::new()).await.unwrap().lines.len(), 1);
+        std::fs::remove_file(path).unwrap();
+        assert!(preview(&engine, &path_string, &CancellationToken::new()).await.is_err());
+    }
     #[tokio::test]
     async fn preview_rejects_files_outside_results() {
         let engine = Engine::default();
         *engine.context.lock().unwrap() = Some(Context {
             options: options(Path::new(".")),
             settings: Settings::default(),
-            allowed: HashSet::new(),
+            allowed: Arc::default(),
         });
         assert!(
             preview(&engine, "unrelated-file", &CancellationToken::new())
                 .await
                 .is_err()
         );
+    }
+    #[test]
+    #[ignore = "manual performance measurement"]
+    fn benchmark_large_result_context() {
+        let context = Context {
+            options: options(Path::new(".")),
+            settings: Settings::default(),
+            allowed: (0..100000).map(|i| format!("C:/project/src/file-{i}.rs")).collect::<HashSet<_>>().into(),
+        };
+        let start = Instant::now();
+        for _ in 0..100 {
+            let snapshot = std::hint::black_box(&context).clone();
+            assert_eq!(snapshot.allowed.len(), 100000);
+            std::hint::black_box(snapshot);
+        }
+        println!("100k result context snapshot: {:.3} ms/snapshot", start.elapsed().as_secs_f64() * 10.0);
     }
     #[test]
     fn custom_index_cannot_point_at_the_project() {
@@ -567,6 +632,51 @@ mod tests {
         };
         assert!(validate(&mut o, &s).unwrap_err().contains("dedicated"));
     }
+    #[tokio::test]
+    #[ignore = "requires TGREP_TEST_EXE pointing to an installed Microsoft tgrep"]
+    async fn directory_exclusions_cover_nested_directories() {
+        let exe = std::env::var("TGREP_TEST_EXE").expect("Set TGREP_TEST_EXE");
+        let dir = tempfile::tempdir().unwrap();
+        for file in ["main.rs", "bin/root.rs", "src/bin/nested.rs", "src/keep.rs"] {
+            let path = dir.path().join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "hello\n").unwrap();
+        }
+        let engine = Engine::default();
+        let s = Settings {
+            engine_path: exe,
+            ..Settings::default()
+        };
+        for indexed in [false, true] {
+            for (exclude, expected) in [
+                ("bin/", 2),
+                ("bin\\", 2),
+                ("bin/**", 3),
+                ("src/bin/", 3),
+            ] {
+                let mut o = options(dir.path());
+                o.use_index = indexed;
+                o.exclude = exclude.into();
+                let result = search(
+                    &engine,
+                    1,
+                    o,
+                    s.clone(),
+                    Channel::new(|_| Ok(())),
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap();
+                assert_eq!(
+                    (result.files, result.matches),
+                    (expected, expected),
+                    "indexed={indexed}, exclude={exclude}"
+                );
+            }
+        }
+        engine.shutdown().await;
+    }
+
     #[tokio::test]
     #[ignore = "requires TGREP_TEST_EXE pointing to an installed Microsoft tgrep"]
     async fn real_engine_search_preview_index_reuse_and_shutdown() {

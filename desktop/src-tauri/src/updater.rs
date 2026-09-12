@@ -8,7 +8,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{copy, Read},
+    io::{copy, Read, Write},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -114,11 +114,7 @@ impl Hooks for LiveHooks {
         } else {
             MAX_ARCHIVE
         };
-        let bytes = response.bytes().await.map_err(|e| e.to_string())?;
-        if bytes.len() as u64 > limit {
-            return Err("Download exceeds the size limit.".into());
-        }
-        Ok(bytes.to_vec())
+        read_download(response, limit).await
     }
     async fn version(&self, exe: &str) -> Result<Version> {
         read_version(exe, &CancellationToken::new()).await
@@ -136,6 +132,20 @@ pub struct Updater<H: Hooks> {
     arch: String,
     hooks: H,
     log: Arc<dyn Fn(&str) + Send + Sync>,
+}
+
+async fn read_download(mut response: reqwest::Response, limit: u64) -> Result<Vec<u8>> {
+    if response.content_length().is_some_and(|length| length > limit) {
+        return Err("Download exceeds the size limit.".into());
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
+        if chunk.len() as u64 > limit.saturating_sub(bytes.len() as u64) {
+            return Err("Download exceeds the size limit.".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
 }
 pub type LiveUpdater = Updater<LiveHooks>;
 
@@ -380,12 +390,7 @@ impl<H: Hooks> Updater<H> {
             previous,
         };
         cancel(token)?;
-        let tmp = stage.join("installed.json");
-        fs::write(&tmp, serde_json::to_vec(&next).map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())?;
-        let dest = self.state_path();
-        let _ = fs::remove_file(&dest);
-        fs::rename(&tmp, &dest).map_err(|e| e.to_string())?;
+        write_state(&self.state_path(), &next)?;
         Ok(UpdateStatus::ready(format!(
             "tgrep {} verified and ready. Restart the app to use it.",
             release.version
@@ -427,6 +432,16 @@ pub fn host_arch() -> Result<&'static str> {
         "aarch64" => Ok("aarch64"),
         _ => Err("unsupported".into()),
     }
+}
+
+fn write_state(dest: &Path, state: &State) -> Result<()> {
+    let dir = dest.parent().ok_or("Engine metadata directory is missing.")?;
+    let mut tmp = tempfile::NamedTempFile::new_in(dir).map_err(|e| e.to_string())?;
+    tmp.write_all(&serde_json::to_vec(state).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    tmp.as_file().sync_all().map_err(|e| e.to_string())?;
+    tmp.persist(dest).map_err(|e| e.to_string())?;
+    Ok(())
 }
 pub fn default_root() -> Result<PathBuf> {
     let local = std::env::var_os("LOCALAPPDATA").ok_or("LOCALAPPDATA is not set.")?;
@@ -765,6 +780,60 @@ mod tests {
     use super::*;
     use std::io::{Cursor, Write};
     use zip::write::SimpleFileOptions;
+
+    #[tokio::test]
+    async fn oversized_downloads_stop_before_waiting_for_the_remaining_body() {
+        for reply in [
+            "HTTP/1.1 200 OK\r\nContent-Length: 65\r\n\r\n".to_string(),
+            format!("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n41\r\n{}\r\n", "x".repeat(65)),
+        ] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = std::thread::spawn(move || {
+                let (mut socket, _) = listener.accept().unwrap();
+                let mut request = [0u8; 2048];
+                socket.read(&mut request).unwrap();
+                socket.write_all(reply.as_bytes()).unwrap();
+            });
+            let response = reqwest::Client::new().get(format!("http://{address}")).send().await.unwrap();
+            let result = read_download(response, 64).await;
+            server.join().unwrap();
+            assert_eq!(result.unwrap_err(), "Download exceeds the size limit.");
+        }
+    }
+
+    #[test]
+    fn manifest_is_always_present_during_replacement() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("installed.json");
+        write_state(&path, &State::default()).unwrap();
+        let running = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let reader_running = running.clone();
+        let reader_path = path.clone();
+        let reader = std::thread::spawn(move || {
+            let mut missing = false;
+            while reader_running.load(std::sync::atomic::Ordering::Relaxed) {
+                match fs::read(&reader_path) {
+                    Ok(bytes) => { serde_json::from_slice::<State>(&bytes).unwrap(); }
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => missing = true,
+                    Err(_) => {}
+                }
+            }
+            missing
+        });
+        let mut replacements = 0;
+        for _ in 0..500 {
+            // Windows may reject a replacement while another reader holds the
+            // target open. Even then the previous metadata must remain intact.
+            if write_state(&path, &State::default()).is_ok() {
+                replacements += 1;
+            }
+        }
+        running.store(false, std::sync::atomic::Ordering::Relaxed);
+        assert!(!reader.join().unwrap(), "engine metadata disappeared during replacement");
+        assert!(replacements > 0);
+        write_state(&path, &State::default()).unwrap();
+    }
 
     struct Mock {
         version: Mutex<String>,

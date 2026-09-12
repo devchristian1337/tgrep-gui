@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Search,
   Settings2,
@@ -174,7 +174,7 @@ export default function App() {
     apply();
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
-  }, [settings, ready]);
+  }, [settings.theme, settings.accent, ready]);
   useEffect(() => {
     if (!ready) return;
     let live = true;
@@ -288,7 +288,7 @@ export default function App() {
       return false;
     }
   };
-  const select = async (path: string) => {
+  const select = useCallback(async (path: string) => {
     const id = ++previewId.current;
     setSelected(path);
     setPreview(null);
@@ -302,7 +302,7 @@ export default function App() {
     } finally {
       if (id === previewId.current) setPreviewLoading(false);
     }
-  };
+  }, []);
   const start = async () => {
     if (running.current || !ready) return;
     if (!options.folder.trim() || !options.pattern) {
@@ -424,7 +424,10 @@ export default function App() {
     }
   };
   const save = async (s: Preferences) => {
-    const next = normalizeSettings(s);
+    const next = normalizeSettings({
+      ...s,
+      recentFolders: settings.recentFolders,
+    });
     await api.save(next);
     settingsReadable.current = true;
     setSettings(next);
@@ -618,16 +621,22 @@ export default function App() {
             </div>
           )}
           {page === "settings" ? (
-            <Settings
-              value={settings}
-              onSave={save}
-              busy={busy}
-              version={version}
-              updateStatus={engineUpdate}
-              restartRequired={restartRequired}
-              onUpdateResult={receiveEngineUpdate}
-              onUpdateStatus={setEngineUpdate}
-            />
+            ready ? (
+              <Settings
+                value={settings}
+                onSave={save}
+                busy={busy}
+                version={version}
+                updateStatus={engineUpdate}
+                restartRequired={restartRequired}
+                onUpdateResult={receiveEngineUpdate}
+                onUpdateStatus={setEngineUpdate}
+              />
+            ) : (
+              <div className="settings-view" role="status">
+                Loading settings…
+              </div>
+            )
           ) : (
             <div className="search-view">
               <header className="search-heading">
@@ -830,7 +839,7 @@ export default function App() {
                 <FileList
                   hits={hits}
                   selected={selected}
-                  onSelect={(p) => void select(p)}
+                  onSelect={select}
                   busy={busy}
                   dense={settings.density === "compact"}
                   shortcuts={settings.shortcuts}
@@ -879,7 +888,7 @@ export default function App() {
                 />
                 <CodePreview
                   key={selected}
-                  hit={hits.find((h) => h.path === selected)}
+                  hit={hitMap.current.get(selected)}
                   preview={preview}
                   loading={previewLoading}
                   error={previewError}
